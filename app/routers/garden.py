@@ -1,5 +1,6 @@
 """Endpoint principali del gioco: analisi dello spazio e gestione giardino."""
 
+import json
 import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
@@ -9,8 +10,18 @@ from app import models
 from app.agents.advisor import analizza_spazio
 from app.catalogo import pianta_per_id
 from app.database import get_db
+from app.game.companions import analizza_consociazioni
+from app.game.scoring import punteggio_biodiversita
 from app.imaging import prepara_immagine
-from app.schemas import AnalyzeResponse, GardenPlan
+from app.schemas import (
+    AnalyzeResponse,
+    BadgeOut,
+    ContainerOut,
+    GardenPlan,
+    GardenStateOut,
+    PlantStateOut,
+    Posizione,
+)
 
 logger = logging.getLogger("microgarden.garden")
 
@@ -102,3 +113,73 @@ async def analyze(
 
     garden = _salva_piano(db, plan, citta)
     return AnalyzeResponse(garden_id=garden.id, plan=plan)
+
+
+# ---------------------------------------------------------------------------
+# Stato del giardino (per il rendering voxel)
+# ---------------------------------------------------------------------------
+
+
+def _carica_garden(db: Session, garden_id: int) -> models.Garden:
+    """Il giardino richiesto, o 404 con messaggio chiaro."""
+    garden = db.get(models.Garden, garden_id)
+    if garden is None:
+        raise HTTPException(status_code=404, detail=f"Giardino {garden_id} non trovato.")
+    return garden
+
+
+def _stato_pianta(plant: models.Plant) -> PlantStateOut:
+    """Combina la scheda della specie con l'ultimo GrowthLog registrato."""
+    scheda = pianta_per_id(plant.species_id) or {}
+    stato = PlantStateOut(
+        plant_id=plant.id,
+        species_id=plant.species_id,
+        nome=scheda.get("nome", plant.species_id),
+        categoria=scheda.get("categoria", ""),
+        colore_voxel=scheda.get("colore_voxel", "#3a7d2c"),
+        container_id=plant.container_id,
+        motivo=plant.motivo,
+        n_aggiornamenti=len(plant.growth_logs),
+    )
+    if plant.growth_logs:
+        ultimo = plant.growth_logs[-1]  # relationship ordinata per created_at
+        stato.stadio = ultimo.stadio
+        stato.salute = ultimo.salute
+        stato.frutti_visibili = ultimo.frutti_visibili
+        stato.problemi = json.loads(ultimo.problemi_json)
+        stato.consigli = json.loads(ultimo.consigli_json)
+        stato.giorni_al_raccolto_stimati = ultimo.giorni_al_raccolto_stimati
+        stato.flagged = ultimo.flagged
+    return stato
+
+
+def _stato_giardino(garden: models.Garden) -> GardenStateOut:
+    """Costruisce la risposta completa per il frontend: contenitori, piante
+    con l'ultimo stadio, punteggio, badge e consociazioni."""
+    return GardenStateOut(
+        garden_id=garden.id,
+        tipo_spazio=garden.tipo_spazio,
+        luce_stimata=garden.luce_stimata,
+        note_analisi=garden.note_analisi,
+        citta=garden.citta,
+        containers=[
+            ContainerOut(
+                container_id=c.id,
+                codice=c.codice,
+                tipo=c.tipo,
+                diametro_cm=c.diametro_cm,
+                posizione=Posizione(x=c.pos_x, z=c.pos_z),
+            )
+            for c in garden.containers
+        ],
+        plants=[_stato_pianta(p) for p in garden.plants],
+        punteggio_biodiversita=punteggio_biodiversita(garden.plants),
+        badges=[BadgeOut(badge_id=b.badge_id, nome=b.nome) for b in garden.badges],
+        consociazioni=analizza_consociazioni(garden.plants),
+    )
+
+
+@router.get("/garden/{garden_id}", response_model=GardenStateOut)
+def garden_state(garden_id: int, db: Session = Depends(get_db)) -> GardenStateOut:
+    """Tutto ciò che serve al frontend per disegnare il giardino voxel."""
+    return _stato_giardino(_carica_garden(db, garden_id))

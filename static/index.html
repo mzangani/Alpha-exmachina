@@ -1,11 +1,744 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="utf-8">
-  <title>MicroGarden</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>MicroGarden 🌱</title>
+<style>
+  /* ── Stile: pulito, font di sistema, palette verde/terra ─────────── */
+  :root {
+    --verde: #2e7d32;
+    --verde-scuro: #1b5e20;
+    --terra: #8d6e63;
+    --crema: #faf7f0;
+    --rosso: #c62828;
+    --ambra: #ef6c00;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--crema);
+    color: #263238;
+  }
+  #scena { position: fixed; inset: 0; touch-action: none; }
+
+  /* ── HUD in alto: punteggio + badge ──────────────────────────────── */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    pointer-events: none;
+    flex-wrap: wrap;
+  }
+  #hud .chip {
+    background: rgba(255,255,255,.92);
+    border: 1px solid #d7cdbf;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 2px 6px rgba(0,0,0,.08);
+    pointer-events: auto;
+  }
+  #hud .titolo { color: var(--verde-scuro); font-size: 15px; }
+  #badges { display: flex; gap: 6px; pointer-events: auto; }
+  #badges .badge {
+    background: #fff8e1; border: 1px solid #e6d9a8;
+    border-radius: 999px; padding: 6px 10px; font-size: 16px;
+    cursor: default; box-shadow: 0 2px 6px rgba(0,0,0,.08);
+  }
+  #hud .spazio-flex { flex: 1; }
+  button.azione {
+    pointer-events: auto;
+    background: var(--verde); color: white; border: none;
+    border-radius: 999px; padding: 9px 16px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  }
+  button.azione:hover { background: var(--verde-scuro); }
+  button.azione:disabled { background: #9e9e9e; cursor: wait; }
+
+  /* ── Consociazioni (in basso a sinistra) ─────────────────────────── */
+  #consociazioni {
+    position: fixed; left: 12px; bottom: 12px;
+    display: flex; flex-direction: column; gap: 6px;
+    max-width: min(420px, 80vw);
+  }
+  #consociazioni .nota {
+    background: rgba(255,255,255,.94); border-radius: 10px;
+    padding: 7px 11px; font-size: 12.5px;
+    border-left: 4px solid var(--verde);
+    box-shadow: 0 2px 6px rgba(0,0,0,.08);
+  }
+  #consociazioni .nota.nemici { border-left-color: var(--rosso); }
+
+  /* ── Pannello laterale della pianta ──────────────────────────────── */
+  #pannello {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: min(360px, 100vw);
+    background: white;
+    box-shadow: -4px 0 20px rgba(0,0,0,.15);
+    transform: translateX(105%);
+    transition: transform .25s ease;
+    padding: 18px;
+    overflow-y: auto;
+    z-index: 20;
+  }
+  #pannello.aperto { transform: translateX(0); }
+  #pannello h2 { color: var(--verde-scuro); font-size: 20px; margin-bottom: 2px; }
+  #pannello .categoria { color: #78909c; font-size: 12.5px; text-transform: uppercase; letter-spacing: .06em; }
+  #pannello .chiudi {
+    position: absolute; top: 12px; right: 12px;
+    background: #eceff1; border: none; border-radius: 50%;
+    width: 32px; height: 32px; font-size: 16px; cursor: pointer;
+  }
+  .barra-stadio { background: #eceff1; border-radius: 999px; height: 14px; margin: 8px 0 4px; overflow: hidden; }
+  .barra-stadio > div { height: 100%; background: linear-gradient(90deg, #8bc34a, var(--verde)); border-radius: 999px; transition: width .6s ease; }
+  .salute { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 700; margin-top: 6px; }
+  .salute.ottima     { background: #e8f5e9; color: var(--verde-scuro); }
+  .salute.buona      { background: #f1f8e9; color: #558b2f; }
+  .salute.sofferente { background: #fff3e0; color: var(--ambra); }
+  .salute.critica    { background: #ffebee; color: var(--rosso); }
+  #pannello section { margin-top: 14px; }
+  #pannello h3 { font-size: 13px; color: #546e7a; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+  #pannello ul { padding-left: 18px; font-size: 13.5px; line-height: 1.45; }
+  #pannello .motivo { font-size: 13px; color: #5d4037; background: #f5f0e6; border-radius: 8px; padding: 8px 10px; }
+  #pannello .avviso-flag {
+    background: #fff3e0; border: 1px solid #ffcc80; color: #e65100;
+    border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-top: 10px;
+  }
+  #pannello .blocco-azioni { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  #pannello select {
+    padding: 8px; border-radius: 8px; border: 1px solid #cfd8dc; font-size: 13.5px; width: 100%;
+  }
+
+  /* ── Modal "Nuovo giardino" ──────────────────────────────────────── */
+  #velo {
+    position: fixed; inset: 0; background: rgba(38,50,56,.5);
+    display: none; align-items: center; justify-content: center; z-index: 30;
+    padding: 14px;
+  }
+  #velo.aperto { display: flex; }
+  #modal {
+    background: white; border-radius: 16px; padding: 22px;
+    width: min(430px, 96vw); max-height: 92vh; overflow-y: auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  }
+  #modal h2 { color: var(--verde-scuro); margin-bottom: 4px; }
+  #modal p.sotto { color: #607d8b; font-size: 13.5px; margin-bottom: 14px; }
+  #modal label { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 4px; color: #455a64; }
+  #modal input, #modal select {
+    width: 100%; padding: 9px; border: 1px solid #cfd8dc; border-radius: 8px; font-size: 14px;
+    background: white;
+  }
+  #modal .riga { display: flex; gap: 10px; }
+  #modal .riga > div { flex: 1; }
+  #modal .invia { width: 100%; margin-top: 16px; padding: 12px; border-radius: 10px; }
+
+  /* ── Toast ───────────────────────────────────────────────────────── */
+  #toasts {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; gap: 8px; z-index: 40;
+    width: min(440px, 92vw);
+  }
+  .toast {
+    background: #263238; color: white; border-radius: 10px;
+    padding: 11px 15px; font-size: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.25);
+    animation: entra .25s ease;
+  }
+  .toast.errore  { background: var(--rosso); }
+  .toast.festa   { background: var(--verde); }
+  .toast.avviso  { background: var(--ambra); }
+  @keyframes entra { from { opacity: 0; transform: translateY(-8px); } }
+
+  /* ── Schermata vuota iniziale ────────────────────────────────────── */
+  #benvenuto {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center; text-align: center;
+    background: linear-gradient(180deg, #eaf4e6, var(--crema));
+    z-index: 10; padding: 20px;
+  }
+  #benvenuto.aperto { display: flex; }
+  #benvenuto h1 { font-size: 42px; color: var(--verde-scuro); margin-bottom: 8px; }
+  #benvenuto p { color: #546e7a; margin-bottom: 20px; max-width: 420px; }
+</style>
 </head>
 <body>
-  <!-- Segnaposto: il frontend voxel arriva nella Fase 3 -->
-  <p>MicroGarden — frontend in costruzione (Fase 3).</p>
+
+<canvas id="scena"></canvas>
+
+<!-- HUD: titolo, punteggio biodiversità, badge, azioni -->
+<div id="hud">
+  <div class="chip titolo">🌱 MicroGarden</div>
+  <div class="chip" id="punteggio" title="Punteggio biodiversità">🌿 0</div>
+  <div id="badges"></div>
+  <div class="spazio-flex"></div>
+  <button class="azione" id="btn-nuovo">📷 Nuovo giardino</button>
+</div>
+
+<div id="consociazioni"></div>
+
+<!-- Pannello laterale della pianta selezionata -->
+<aside id="pannello">
+  <button class="chiudi" id="btn-chiudi-pannello">✕</button>
+  <div class="categoria" id="p-categoria"></div>
+  <h2 id="p-nome"></h2>
+  <div class="barra-stadio"><div id="p-barra" style="width:0%"></div></div>
+  <div style="font-size:13px;color:#607d8b"><span id="p-stadio">0</span>% di maturazione
+    <span id="p-raccolto"></span></div>
+  <div><span class="salute buona" id="p-salute">buona</span></div>
+  <div class="avviso-flag" id="p-flag" style="display:none">
+    ⚠️ L'ultima foto è sembrata poco plausibile all'AI: lo stato è aggiornato
+    ma niente badge. Carica una foto reale della pianta!
+  </div>
+  <section id="p-sez-problemi" style="display:none">
+    <h3>Problemi rilevati</h3><ul id="p-problemi"></ul>
+  </section>
+  <section id="p-sez-consigli" style="display:none">
+    <h3>Consigli</h3><ul id="p-consigli"></ul>
+  </section>
+  <section>
+    <h3>Perché è qui</h3>
+    <div class="motivo" id="p-motivo"></div>
+  </section>
+  <div class="blocco-azioni">
+    <button class="azione" id="btn-foto">📷 Carica foto progresso</button>
+    <select id="sel-contenitore"></select>
+    <button class="azione" id="btn-sposta" style="background:var(--terra)">📦 Sposta qui</button>
+  </div>
+</aside>
+
+<!-- Schermata iniziale se non c'è ancora un giardino -->
+<div id="benvenuto" class="aperto">
+  <div>
+    <h1>🌱 MicroGarden</h1>
+    <p>Fotografa il tuo balcone: un agente AI ti dirà cosa coltivare e lo
+       trasformerà in un giardino voxel che cresce con le tue foto reali.</p>
+    <button class="azione" id="btn-inizia">📷 Crea il tuo giardino</button>
+  </div>
+</div>
+
+<!-- Modal con foto + questionario -->
+<div id="velo">
+  <div id="modal">
+    <h2>Il tuo spazio</h2>
+    <p class="sotto">Carica una foto del balcone/terrazzo e rispondi: l'agente
+       Garden Advisor progetterà il giardino per te.</p>
+    <form id="form-analyze">
+      <label>Foto dello spazio *</label>
+      <input type="file" name="foto" accept="image/*" capture="environment" required>
+      <div class="riga">
+        <div><label>Città</label><input name="citta" placeholder="Milano"></div>
+        <div><label>Orientamento</label>
+          <select name="orientamento">
+            <option value="">non so</option><option>nord</option><option>nord-est</option>
+            <option>est</option><option>sud-est</option><option>sud</option>
+            <option>sud-ovest</option><option>ovest</option><option>nord-ovest</option>
+          </select>
+        </div>
+      </div>
+      <div class="riga">
+        <div><label>Ore di sole al giorno</label><input name="ore_sole" type="number" min="0" max="14" placeholder="6"></div>
+        <div><label>Minuti/settimana di cura</label><input name="minuti_settimana" type="number" min="0" placeholder="60"></div>
+      </div>
+      <label>Cosa ami mangiare o coltivare?</label>
+      <input name="preferenze" placeholder="pomodori, basilico, fragole…">
+      <button class="azione invia" type="submit" id="btn-invia">🌍 Analizza il mio spazio</button>
+    </form>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<!-- Input file nascosto, riusato per le foto di progresso -->
+<input type="file" id="file-progresso" accept="image/*" capture="environment" style="display:none">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ════════════════════════════════════════════════════════════════════
+   STATO DELL'APP
+   Tutta l'intelligenza sta nel backend: qui teniamo solo ciò che serve
+   a disegnare e a chiamare le API.
+   ════════════════════════════════════════════════════════════════════ */
+const stato = {
+  gardenId: Number(localStorage.getItem('microgarden_garden_id')) || null,
+  giardino: null,          // GardenStateOut dal backend
+  catalogo: {},            // species_id -> scheda pianta
+  piantaSelezionata: null, // PlantStateOut della pianta nel pannello
+};
+
+const CELLA = 1.35;        // distanza fra le celle della griglia (unità scena)
+
+/* ════════════════════════════════════════════════════════════════════
+   CHIAMATE API — piccolo helper con errori leggibili
+   ════════════════════════════════════════════════════════════════════ */
+async function api(percorso, opzioni = {}) {
+  let risposta;
+  try {
+    risposta = await fetch(percorso, opzioni);
+  } catch {
+    throw new Error('Server non raggiungibile: è acceso? (uvicorn app.main:app)');
+  }
+  if (!risposta.ok) {
+    let dettaglio = `Errore ${risposta.status}`;
+    try {
+      const corpo = await risposta.json();
+      if (corpo.detail) dettaglio = typeof corpo.detail === 'string'
+        ? corpo.detail : JSON.stringify(corpo.detail);
+    } catch { /* corpo non JSON: teniamo il dettaglio generico */ }
+    throw new Error(dettaglio);
+  }
+  return risposta.json();
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TOAST — messaggi visibili all'utente (successi ED errori)
+   ════════════════════════════════════════════════════════════════════ */
+function toast(messaggio, tipo = '', durataMs = 4200) {
+  const div = document.createElement('div');
+  div.className = `toast ${tipo}`;
+  div.textContent = messaggio;
+  document.getElementById('toasts').appendChild(div);
+  setTimeout(() => div.remove(), durataMs);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   SCENA THREE.JS
+   ════════════════════════════════════════════════════════════════════ */
+const canvas = document.getElementById('scena');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xe9f2e4);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+camera.position.set(4, 5, 7);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI / 2.15;   // non si scende sotto il pavimento
+controls.minDistance = 2.5;
+controls.maxDistance = 22;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+const sole = new THREE.DirectionalLight(0xfff4d6, 1.1);
+sole.position.set(5, 9, 4);
+scene.add(sole);
+
+// Gruppi ricostruiti a ogni render del giardino
+let gruppoGiardino = new THREE.Group();
+scene.add(gruppoGiardino);
+let gruppiPiante = [];     // per il raycasting dei click
+let animazioni = [];       // animazioni di crescita in corso
+
+function ridimensiona() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', ridimensiona);
+ridimensiona();
+
+function loop(t) {
+  requestAnimationFrame(loop);
+  // Animazioni di crescita: la pianta "sboccia" scalando da 0 a 1
+  animazioni = animazioni.filter(a => {
+    const k = Math.min((t - a.inizio) / a.durata, 1);
+    const ease = 1 - Math.pow(1 - k, 3);          // easing cubico in uscita
+    a.gruppo.scale.setScalar(0.25 + 0.75 * ease);
+    return k < 1;
+  });
+  controls.update();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(loop);
+
+/* ── Utilità colori ──────────────────────────────────────────────── */
+function colore(hex) { return new THREE.Color(hex); }
+
+/** Tinge il colore verso il giallo (sofferente) o il marrone (critica). */
+function tintaSalute(coloreBase, salute) {
+  const c = coloreBase.clone();
+  if (salute === 'sofferente') c.lerp(colore('#d4c04a'), 0.45);
+  if (salute === 'critica')    c.lerp(colore('#7a5233'), 0.6);
+  return c;
+}
+
+const geoCubo = new THREE.BoxGeometry(1, 1, 1);
+function cubo(cx, cy, cz, lato, coloreCubo) {
+  const m = new THREE.Mesh(geoCubo, new THREE.MeshLambertMaterial({ color: coloreCubo }));
+  m.scale.setScalar(lato);
+  m.position.set(cx, cy, cz);
+  return m;
+}
+
+/* ── Contenitori ─────────────────────────────────────────────────── */
+const COLORI_CONTENITORE = { vaso: '#a9603c', fioriera: '#8d6e63', cassetta: '#9c7a4f', terra: '#5d4632' };
+
+function meshContenitore(cont) {
+  const g = new THREE.Group();
+  // Larghezza proporzionale al diametro stimato (tra 0.55 e 1.15 unità)
+  const l = 0.55 + Math.min(cont.diametro_cm, 90) / 90 * 0.6;
+  const h = cont.tipo === 'terra' ? 0.08 : 0.34;
+  const corpo = cubo(0, h / 2, 0, 1, colore(COLORI_CONTENITORE[cont.tipo] || '#a9603c'));
+  corpo.scale.set(l, h, cont.tipo === 'fioriera' ? l * 0.55 : l);
+  g.add(corpo);
+  if (cont.tipo !== 'terra') {
+    // "Terriccio" scuro appoggiato sopra il contenitore
+    const suolo = cubo(0, h + 0.015, 0, 1, colore('#4e342e'));
+    suolo.scale.set(l * 0.9, 0.05, (cont.tipo === 'fioriera' ? l * 0.55 : l) * 0.9);
+    g.add(suolo);
+  }
+  g.position.set(cont.posizione.x * CELLA, 0, cont.posizione.z * CELLA);
+  g.userData.altezzaSuolo = cont.tipo === 'terra' ? 0.09 : 0.38;
+  return g;
+}
+
+/* ── Piante voxel: il cuore del gemello digitale ─────────────────────
+   Mapping stadio → aspetto (vedi README):
+     stadio < 0.2  : 1 cubetto piccolo verde chiaro (germoglio)
+     0.2 – 0.5     : 2 cubi (piantina)
+     0.5 – 0.8     : 3-4 cubi, colore pieno della specie
+     ≥ 0.8         : + frutti (ortaggio_frutto) o fiori (fiore/aromatica)
+     salute        : tinge verso giallo (sofferente) o marrone (critica)
+   ──────────────────────────────────────────────────────────────────── */
+function meshPianta(pianta) {
+  const g = new THREE.Group();
+  const scheda = stato.catalogo[pianta.species_id] || {};
+  const categoria = pianta.categoria || scheda.categoria || '';
+  const s = pianta.stadio ?? 0;
+
+  // Per i fiori il fusto è verde e colore_voxel è il colore del fiore;
+  // per tutte le altre categorie colore_voxel è il colore del fogliame.
+  const coloreFoglie = categoria === 'fiore' ? colore('#3e7d32') : colore(pianta.colore_voxel);
+  const cFoglie = tintaSalute(coloreFoglie, pianta.salute);
+  const cGermoglio = tintaSalute(colore('#a5d68a'), pianta.salute);
+  const LATO = 0.26;
+
+  if (s < 0.2) {
+    g.add(cubo(0, LATO * 0.4, 0, LATO * 0.7, cGermoglio));
+  } else if (s < 0.5) {
+    g.add(cubo(0, LATO / 2, 0, LATO, cFoglie.clone().lerp(colore('#ffffff'), 0.18)));
+    g.add(cubo(0, LATO * 1.5, 0, LATO, cGermoglio));
+  } else {
+    const nCubi = s < 0.65 ? 3 : 4;
+    for (let i = 0; i < nCubi; i++) {
+      // Leggero sfalsamento orizzontale per un look meno "a torre"
+      const dx = (i % 2 === 0 ? 0 : 0.06) * (i > 1 ? -1 : 1);
+      g.add(cubo(dx, LATO / 2 + i * LATO, 0, LATO, cFoglie));
+    }
+    const cima = nCubi * LATO;
+
+    if (s >= 0.8) {
+      if (categoria === 'ortaggio_frutto') {
+        // Cubetti rossi/arancio sparsi = frutti maturi
+        const cFrutto1 = colore('#d84a3a'), cFrutto2 = colore('#e8862e');
+        const posizioni = [
+          [ LATO * 0.7, cima - LATO * 1.2,  LATO * 0.35],
+          [-LATO * 0.65, cima - LATO * 2.0, -LATO * 0.3],
+          [ LATO * 0.3,  cima - LATO * 0.4, -LATO * 0.55],
+        ];
+        posizioni.forEach(([x, y, z], i) =>
+          g.add(cubo(x, Math.max(y, LATO * 0.6), z, LATO * 0.45, i % 2 ? cFrutto2 : cFrutto1)));
+      } else {
+        // Fiori in cima: colore della specie per i "fiore",
+        // fiorellini chiari per le aromatiche e le altre categorie
+        const cFiore = categoria === 'fiore' ? colore(pianta.colore_voxel) : colore('#efe6f7');
+        g.add(cubo(0, cima + LATO * 0.35, 0, LATO * 0.6, cFiore));
+        g.add(cubo(LATO * 0.55, cima - LATO * 0.35, LATO * 0.2, LATO * 0.42, cFiore));
+        g.add(cubo(-LATO * 0.5, cima - LATO * 0.5, -LATO * 0.25, LATO * 0.42, cFiore));
+      }
+    }
+  }
+
+  // Ogni mesh del gruppo sa a quale pianta appartiene (per il raycast)
+  g.traverse(o => { o.userData.plantId = pianta.plant_id; });
+  g.userData.plantId = pianta.plant_id;
+  return g;
+}
+
+/* ── Costruzione dell'intera scena giardino ──────────────────────── */
+function disegnaGiardino(g, opzioni = {}) {
+  scene.remove(gruppoGiardino);
+  gruppoGiardino = new THREE.Group();
+  gruppiPiante = [];
+
+  // Estensione della griglia in celle (minimo 5×4 per non sembrare vuota)
+  const xs = g.containers.map(c => c.posizione.x);
+  const zs = g.containers.map(c => c.posizione.z);
+  const maxX = Math.max(4, ...xs) + 1, maxZ = Math.max(3, ...zs) + 1;
+  const minX = Math.min(0, ...xs), minZ = Math.min(0, ...zs);
+  const largh = (maxX - minX) * CELLA + 1.6;
+  const prof  = (maxZ - minZ) * CELLA + 1.6;
+  const centroX = ((maxX + minX) / 2 - 0.5) * CELLA + CELLA / 2;
+  const centroZ = ((maxZ + minZ) / 2 - 0.5) * CELLA + CELLA / 2;
+
+  // Pavimento del terrazzo + griglia
+  const pavimento = new THREE.Mesh(
+    new THREE.BoxGeometry(largh, 0.12, prof),
+    new THREE.MeshLambertMaterial({ color: 0xcbbda2 })
+  );
+  pavimento.position.set(centroX, -0.06, centroZ);
+  gruppoGiardino.add(pavimento);
+  const griglia = new THREE.GridHelper(Math.max(largh, prof), Math.round(Math.max(largh, prof) / CELLA * 2), 0xb3a488, 0xb3a488);
+  griglia.position.set(centroX, 0.005, centroZ);
+  gruppoGiardino.add(griglia);
+
+  // Contenitori, indicizzati per id
+  const contenitoriPerId = {};
+  for (const cont of g.containers) {
+    const m = meshContenitore(cont);
+    contenitoriPerId[cont.container_id] = { dati: cont, mesh: m, nPiante: 0 };
+    gruppoGiardino.add(m);
+  }
+
+  // Piante: se più piante condividono un contenitore, le sfalsiamo
+  const OFFSETS = [[0, 0], [0.3, 0.16], [-0.28, 0.22], [0.2, -0.28], [-0.22, -0.2], [0.36, -0.05]];
+  for (const pianta of g.plants) {
+    const voce = contenitoriPerId[pianta.container_id];
+    if (!voce) continue;
+    const m = meshPianta(pianta);
+    const [ox, oz] = OFFSETS[voce.nPiante % OFFSETS.length];
+    voce.nPiante += 1;
+    m.position.set(
+      voce.mesh.position.x + ox * 0.8,
+      voce.mesh.userData.altezzaSuolo,
+      voce.mesh.position.z + oz * 0.8,
+    );
+    if (opzioni.animaPlantId === pianta.plant_id) {
+      m.scale.setScalar(0.25);
+      animazioni.push({ gruppo: m, inizio: performance.now(), durata: 900 });
+    }
+    gruppiPiante.push(m);
+    gruppoGiardino.add(m);
+  }
+
+  scene.add(gruppoGiardino);
+
+  // Inquadratura iniziale centrata sul giardino (solo al primo disegno)
+  if (opzioni.centraCamera) {
+    controls.target.set(centroX, 0.4, centroZ);
+    const raggio = Math.max(largh, prof);
+    camera.position.set(centroX + raggio * 0.55, raggio * 0.7, centroZ + raggio * 0.95);
+  }
+}
+
+/* ── Click/tap su una pianta → pannello ──────────────────────────── */
+const raycaster = new THREE.Raycaster();
+const puntatore = new THREE.Vector2();
+let ultimoPointerDown = { x: 0, y: 0, t: 0 };
+
+canvas.addEventListener('pointerdown', e => {
+  ultimoPointerDown = { x: e.clientX, y: e.clientY, t: performance.now() };
+});
+canvas.addEventListener('pointerup', e => {
+  // Ignora i drag della camera: conta solo un vero click/tap
+  const dx = e.clientX - ultimoPointerDown.x, dy = e.clientY - ultimoPointerDown.y;
+  if (Math.hypot(dx, dy) > 6 || performance.now() - ultimoPointerDown.t > 400) return;
+
+  puntatore.x = (e.clientX / window.innerWidth) * 2 - 1;
+  puntatore.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(puntatore, camera);
+  const colpi = raycaster.intersectObjects(gruppiPiante, true);
+  if (colpi.length > 0) {
+    const plantId = colpi[0].object.userData.plantId;
+    const pianta = stato.giardino.plants.find(p => p.plant_id === plantId);
+    if (pianta) apriPannello(pianta);
+  } else {
+    chiudiPannello();
+  }
+});
+
+/* ════════════════════════════════════════════════════════════════════
+   PANNELLO PIANTA
+   ════════════════════════════════════════════════════════════════════ */
+const pannello = document.getElementById('pannello');
+
+function apriPannello(pianta) {
+  stato.piantaSelezionata = pianta;
+  document.getElementById('p-nome').textContent = pianta.nome;
+  document.getElementById('p-categoria').textContent = pianta.categoria.replace('_', ' ');
+  document.getElementById('p-barra').style.width = `${Math.round(pianta.stadio * 100)}%`;
+  document.getElementById('p-stadio').textContent = Math.round(pianta.stadio * 100);
+  document.getElementById('p-raccolto').textContent =
+    pianta.giorni_al_raccolto_stimati != null ? ` — raccolto tra ~${pianta.giorni_al_raccolto_stimati} gg` : '';
+  const salute = document.getElementById('p-salute');
+  salute.textContent = pianta.salute;
+  salute.className = `salute ${pianta.salute}`;
+  document.getElementById('p-flag').style.display = pianta.flagged ? 'block' : 'none';
+
+  const riempi = (idSezione, idLista, voci) => {
+    document.getElementById(idSezione).style.display = voci.length ? 'block' : 'none';
+    document.getElementById(idLista).innerHTML = voci.map(v => `<li>${v}</li>`).join('');
+  };
+  riempi('p-sez-problemi', 'p-problemi', pianta.problemi);
+  riempi('p-sez-consigli', 'p-consigli', pianta.consigli);
+  document.getElementById('p-motivo').textContent = pianta.motivo || '—';
+
+  // Select dei contenitori per lo spostamento
+  const sel = document.getElementById('sel-contenitore');
+  sel.innerHTML = stato.giardino.containers.map(c =>
+    `<option value="${c.container_id}" ${c.container_id === pianta.container_id ? 'selected' : ''}>
+       ${c.codice} (${c.tipo}, ${c.diametro_cm} cm)</option>`).join('');
+
+  pannello.classList.add('aperto');
+}
+function chiudiPannello() { pannello.classList.remove('aperto'); }
+document.getElementById('btn-chiudi-pannello').addEventListener('click', chiudiPannello);
+
+/* ════════════════════════════════════════════════════════════════════
+   HUD: punteggio, badge, consociazioni
+   ════════════════════════════════════════════════════════════════════ */
+const EMOJI_BADGE = {
+  primo_raccolto: '🍅', pollice_verde: '💚', biodiversita_5: '🦋',
+  salvataggio: '🚑', impollinatore: '🐝',
+};
+
+function aggiornaHud(g) {
+  document.getElementById('punteggio').textContent = `🌿 ${g.punteggio_biodiversita}`;
+  document.getElementById('badges').innerHTML = g.badges.map(b =>
+    `<span class="badge" title="${b.nome}">${EMOJI_BADGE[b.badge_id] || '🏅'}</span>`).join('');
+  document.getElementById('consociazioni').innerHTML = g.consociazioni.map(c =>
+    `<div class="nota ${c.tipo}">${c.tipo === 'amici' ? '✅' : '⚠️'} ${c.messaggio}</div>`).join('');
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   FLUSSI PRINCIPALI
+   ════════════════════════════════════════════════════════════════════ */
+async function caricaCatalogo() {
+  const lista = await api('/api/plants/catalog');
+  stato.catalogo = Object.fromEntries(lista.map(p => [p.id, p]));
+}
+
+async function caricaGiardino(opzioni = {}) {
+  const g = await api(`/api/garden/${stato.gardenId}`);
+  stato.giardino = g;
+  disegnaGiardino(g, opzioni);
+  aggiornaHud(g);
+  document.getElementById('benvenuto').classList.remove('aperto');
+}
+
+/* ── Nuovo giardino ──────────────────────────────────────────────── */
+const velo = document.getElementById('velo');
+document.getElementById('btn-nuovo').addEventListener('click', () => velo.classList.add('aperto'));
+document.getElementById('btn-inizia').addEventListener('click', () => velo.classList.add('aperto'));
+velo.addEventListener('click', e => { if (e.target === velo) velo.classList.remove('aperto'); });
+
+document.getElementById('form-analyze').addEventListener('submit', async e => {
+  e.preventDefault();
+  const bottone = document.getElementById('btn-invia');
+  bottone.disabled = true;
+  bottone.textContent = '🤖 Il Garden Advisor sta analizzando la foto…';
+  try {
+    const dati = new FormData(e.target);
+    const risposta = await api('/api/garden/analyze', { method: 'POST', body: dati });
+    stato.gardenId = risposta.garden_id;
+    localStorage.setItem('microgarden_garden_id', String(risposta.garden_id));
+    velo.classList.remove('aperto');
+    chiudiPannello();
+    await caricaGiardino({ centraCamera: true });
+    toast(`🌱 Giardino creato! ${risposta.plan.piante_consigliate.length} piante consigliate. Clicca sui voxel per esplorarle.`, 'festa', 6000);
+    for (const consiglio of risposta.plan.consigli_generali) toast(`💡 ${consiglio}`, '', 7000);
+  } catch (errore) {
+    toast(`❌ ${errore.message}`, 'errore', 7000);
+  } finally {
+    bottone.disabled = false;
+    bottone.textContent = '🌍 Analizza il mio spazio';
+  }
+});
+
+/* ── Foto di progresso (Agente 2) ────────────────────────────────── */
+const inputFoto = document.getElementById('file-progresso');
+document.getElementById('btn-foto').addEventListener('click', () => inputFoto.click());
+
+inputFoto.addEventListener('change', async () => {
+  const file = inputFoto.files[0];
+  inputFoto.value = '';
+  if (!file || !stato.piantaSelezionata) return;
+  const plantId = stato.piantaSelezionata.plant_id;
+  toast('🤖 Il Growth Tracker sta osservando la tua pianta…');
+  try {
+    const dati = new FormData();
+    dati.append('foto', file);
+    const r = await api(`/api/plant/${plantId}/update`, { method: 'POST', body: dati });
+    await caricaGiardino({ animaPlantId: plantId });
+    // Riapre il pannello con i dati freschi
+    const aggiornata = stato.giardino.plants.find(p => p.plant_id === plantId);
+    if (aggiornata) apriPannello(aggiornata);
+
+    if (r.flagged) {
+      toast('🕵️ Foto poco plausibile secondo l\'AI: stato aggiornato ma niente badge.', 'avviso', 6500);
+    } else {
+      toast(`📈 ${Math.round(r.report.stadio * 100)}% di maturazione — salute ${r.report.salute}.`, 'festa');
+    }
+    for (const badge of r.nuovi_badge) {
+      toast(`🏅 Badge sbloccato: ${EMOJI_BADGE[badge.badge_id] || ''} ${badge.nome}!`, 'festa', 7000);
+    }
+  } catch (errore) {
+    toast(`❌ ${errore.message}`, 'errore', 7000);
+  }
+});
+
+/* ── Spostamento pianta (zero AI) ────────────────────────────────── */
+document.getElementById('btn-sposta').addEventListener('click', async () => {
+  if (!stato.piantaSelezionata) return;
+  const destinazione = Number(document.getElementById('sel-contenitore').value);
+  if (destinazione === stato.piantaSelezionata.container_id) {
+    toast('La pianta è già in quel contenitore.'); return;
+  }
+  try {
+    const r = await api(`/api/plant/${stato.piantaSelezionata.plant_id}/move`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ container_id: destinazione }),
+    });
+    await caricaGiardino({ animaPlantId: stato.piantaSelezionata.plant_id });
+    chiudiPannello();
+    const nemici = r.consociazioni.filter(c => c.tipo === 'nemici');
+    if (nemici.length) {
+      for (const n of nemici) toast(`⚠️ ${n.messaggio}`, 'avviso', 6500);
+    } else {
+      toast('📦 Pianta spostata!', 'festa');
+    }
+  } catch (errore) {
+    toast(`❌ ${errore.message}`, 'errore', 7000);
+  }
+});
+
+/* ════════════════════════════════════════════════════════════════════
+   AVVIO
+   ════════════════════════════════════════════════════════════════════ */
+(async function avvia() {
+  try {
+    await caricaCatalogo();
+    if (stato.gardenId) {
+      await caricaGiardino({ centraCamera: true });
+    }
+  } catch (errore) {
+    // Giardino inesistente (DB azzerato?) → si riparte dal benvenuto
+    localStorage.removeItem('microgarden_garden_id');
+    stato.gardenId = null;
+    document.getElementById('benvenuto').classList.add('aperto');
+    if (!String(errore.message).includes('non trovato')) {
+      toast(`❌ ${errore.message}`, 'errore', 7000);
+    }
+  }
+})();
+</script>
 </body>
 </html>
