@@ -1,0 +1,19 @@
+# Web framework + server ASGI
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# ORM per SQLite (versione 2.x, sintassi moderna con Mapped/mapped_column)
+sqlalchemy>=2.0
+
+# Validazione dati e lettura .env (Pydantic v2)
+pydantic>=2.6
+pydantic-settings>=2.2
+
+# SDK ufficiale Anthropic per gli agenti AI
+anthropic>=0.40
+
+# Gestione upload multipart (richiesto da FastAPI per i form con file)
+python-multipart>=0.0.9
+
+# Ridimensionamento immagini prima dell'invio all'API (risparmio token)
+Pillow>=10.0

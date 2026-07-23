@@ -1,0 +1,18 @@
+# Ambiente Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Segreti: la chiave API vive SOLO in .env, mai nel repository
+.env
+
+# Database SQLite locale
+*.db
+*.sqlite3
+
+# File temporanei / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
