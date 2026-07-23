@@ -1,0 +1,56 @@
+{
+  "spazio": {
+    "tipo": "balcone",
+    "luce_stimata": "pieno_sole",
+    "note_analisi": "Balcone esposto a sud con ringhiera in metallo: si vedono quattro contenitori vuoti lungo il parapetto e buona luce diretta senza ostacoli. Le piastrelle da ~20 cm mi hanno aiutato a stimare i diametri dei vasi."
+  },
+  "contenitori_rilevati": [
+    { "id": "vaso_1", "tipo": "vaso", "diametro_cm_stimato": 30, "posizione": { "x": 0, "z": 0 } },
+    { "id": "vaso_2", "tipo": "vaso", "diametro_cm_stimato": 45, "posizione": { "x": 1, "z": 0 } },
+    { "id": "cassetta_1", "tipo": "cassetta", "diametro_cm_stimato": 50, "posizione": { "x": 3, "z": 0 } },
+    { "id": "fioriera_1", "tipo": "fioriera", "diametro_cm_stimato": 60, "posizione": { "x": 2, "z": 2 } }
+  ],
+  "piante_consigliate": [
+    {
+      "plant_id": "basilico",
+      "contenitore_id": "vaso_1",
+      "motivo": "Ama il pieno sole, sta benissimo in un vaso da 30 cm ed è amico del pomodoro nel vaso accanto.",
+      "quando_piantare": "aprile-giugno"
+    },
+    {
+      "plant_id": "pomodoro_ciliegino",
+      "contenitore_id": "vaso_2",
+      "motivo": "Il vaso da 45 cm ha il volume necessario (~20 L) e l'esposizione a sud è ideale; accanto al basilico cresce meglio.",
+      "quando_piantare": "aprile-maggio"
+    },
+    {
+      "plant_id": "fragola",
+      "contenitore_id": "cassetta_1",
+      "motivo": "La cassetta è perfetta per 2-3 piantine di fragola; con l'erba cipollina accanto si tengono lontani gli afidi.",
+      "quando_piantare": "marzo-aprile"
+    },
+    {
+      "plant_id": "erba_cipollina",
+      "contenitore_id": "cassetta_1",
+      "motivo": "Occupa poco spazio, è amica della fragola nella stessa cassetta e richiede pochissima cura.",
+      "quando_piantare": "marzo-maggio"
+    },
+    {
+      "plant_id": "calendula",
+      "contenitore_id": "fioriera_1",
+      "motivo": "Fiore che attira gli impollinatori e protegge il pomodoro dagli afidi; petali commestibili per le insalate.",
+      "quando_piantare": "marzo-maggio"
+    },
+    {
+      "plant_id": "tagete",
+      "contenitore_id": "fioriera_1",
+      "motivo": "Secondo fiore per la biodiversità: le radici del tagete tengono lontani i nematodi dalle piante vicine.",
+      "quando_piantare": "aprile-maggio"
+    }
+  ],
+  "consigli_generali": [
+    "Annaffia la mattina presto: sul balcone esposto a sud l'acqua di mezzogiorno evapora prima di arrivare alle radici.",
+    "Metti sottovasi con argilla espansa: d'estate la ringhiera scalda molto e i vasi si asciugano in fretta.",
+    "Il pomodoro nel vaso grande avrà bisogno di un tutore alto almeno 1,5 m: fissalo alla ringhiera fin da subito."
+  ]
+}

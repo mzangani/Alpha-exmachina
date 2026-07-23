@@ -1,0 +1,14 @@
+{
+  "stadio": 0.85,
+  "salute": "buona",
+  "problemi": ["qualche foglia ingiallita alla base, probabilmente per l'età"],
+  "consigli": [
+    "Riduci le annaffiature a 2 volte a settimana: il terriccio in foto appare ancora umido.",
+    "Rimuovi le foglie gialle alla base per far circolare l'aria.",
+    "Raccogli i frutti maturi appena pronti: stimola la pianta a produrne altri."
+  ],
+  "frutti_visibili": true,
+  "giorni_al_raccolto_stimati": 5,
+  "coerenza": 0.9,
+  "note_coerenza": "Stessa pianta e stesso vaso della foto precedente; la progressione di crescita è del tutto plausibile per il tempo trascorso."
+}

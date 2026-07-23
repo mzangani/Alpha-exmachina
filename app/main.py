@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import BASE_DIR, settings
 from app.database import init_db
+from app.routers import garden, plants
 
 # Logging di base: gli agenti e gli endpoint scrivono qui i loro log.
 logging.basicConfig(
@@ -33,6 +34,10 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+app.include_router(garden.router)
+app.include_router(plants.router)
 
 
 @app.get("/health")
