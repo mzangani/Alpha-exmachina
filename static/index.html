@@ -722,6 +722,16 @@ document.getElementById('btn-sposta').addEventListener('click', async () => {
 /* ════════════════════════════════════════════════════════════════════
    AVVIO
    ════════════════════════════════════════════════════════════════════ */
+// Hook di debug per gli smoke test headless: proietta la posizione di una
+// pianta in coordinate schermo, così i test possono "cliccarla" davvero.
+window.__mg_schermoPianta = (plantId) => {
+  const g = gruppiPiante.find(x => x.userData.plantId === plantId);
+  if (!g) return null;
+  const v = new THREE.Box3().setFromObject(g).getCenter(new THREE.Vector3());
+  v.project(camera);
+  return { x: (v.x + 1) / 2 * window.innerWidth, y: (1 - v.y) / 2 * window.innerHeight };
+};
+
 (async function avvia() {
   try {
     await caricaCatalogo();

@@ -6,10 +6,14 @@ import logging
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from datetime import datetime, timezone
+
 from app import models
 from app.agents.advisor import analizza_spazio
+from app.agents.tracker import valuta_crescita
 from app.catalogo import pianta_per_id
 from app.database import get_db
+from app.game.badges import SOGLIA_COERENZA, check_badges
 from app.game.companions import analizza_consociazioni
 from app.game.scoring import punteggio_biodiversita
 from app.imaging import prepara_immagine
@@ -21,6 +25,7 @@ from app.schemas import (
     GardenStateOut,
     PlantStateOut,
     Posizione,
+    UpdateResponse,
 )
 
 logger = logging.getLogger("microgarden.garden")
@@ -183,3 +188,85 @@ def _stato_giardino(garden: models.Garden) -> GardenStateOut:
 def garden_state(garden_id: int, db: Session = Depends(get_db)) -> GardenStateOut:
     """Tutto ciò che serve al frontend per disegnare il giardino voxel."""
     return _stato_giardino(_carica_garden(db, garden_id))
+
+
+# ---------------------------------------------------------------------------
+# Aggiornamento crescita (Agente 2 + gamification)
+# ---------------------------------------------------------------------------
+
+
+def _report_da_log(log: models.GrowthLog) -> dict:
+    """Ricostruisce il dizionario GrowthReport da un log salvato,
+    per passarlo come contesto all'Agente 2 (confronto anti-cheat)."""
+    return {
+        "stadio": log.stadio,
+        "salute": log.salute,
+        "problemi": json.loads(log.problemi_json),
+        "consigli": json.loads(log.consigli_json),
+        "frutti_visibili": log.frutti_visibili,
+        "giorni_al_raccolto_stimati": log.giorni_al_raccolto_stimati,
+        "coerenza": log.coerenza,
+        "note_coerenza": log.note_coerenza,
+    }
+
+
+@router.post("/plant/{plant_id}/update", response_model=UpdateResponse)
+async def update_plant(
+    plant_id: int,
+    foto: UploadFile,
+    db: Session = Depends(get_db),
+) -> UpdateResponse:
+    """Foto di progresso → Agente 2 → GrowthLog → badge (Python puro)."""
+    plant = db.get(models.Plant, plant_id)
+    if plant is None:
+        raise HTTPException(status_code=404, detail=f"Pianta {plant_id} non trovata.")
+
+    foto_b64, media_type = await prepara_immagine(foto)
+    scheda = pianta_per_id(plant.species_id) or {}
+
+    # Contesto per l'anti-cheat: ultimo report e la sua data (se esistono)
+    ultimo_log = plant.growth_logs[-1] if plant.growth_logs else None
+    creato = plant.created_at
+    if creato.tzinfo is None:  # SQLite può restituire datetime "naive"
+        creato = creato.replace(tzinfo=timezone.utc)
+    giorni_a_dimora = (datetime.now(timezone.utc) - creato).days
+
+    report = valuta_crescita(
+        foto_b64=foto_b64,
+        media_type=media_type,
+        nome_pianta=scheda.get("nome", plant.species_id),
+        categoria=scheda.get("categoria", ""),
+        giorni_raccolto_attesi=scheda.get("giorni_raccolto", 60),
+        giorni_dalla_messa_a_dimora=giorni_a_dimora,
+        report_precedente=_report_da_log(ultimo_log) if ultimo_log else None,
+        data_report_precedente=ultimo_log.created_at if ultimo_log else None,
+    )
+
+    # L'AI giudica, il codice decide: sotto soglia il report è "flagged"
+    flagged = report.coerenza < SOGLIA_COERENZA
+
+    log = models.GrowthLog(
+        plant_id=plant.id,
+        stadio=report.stadio,
+        salute=report.salute,
+        problemi_json=json.dumps(report.problemi, ensure_ascii=False),
+        consigli_json=json.dumps(report.consigli, ensure_ascii=False),
+        frutti_visibili=report.frutti_visibili,
+        giorni_al_raccolto_stimati=report.giorni_al_raccolto_stimati,
+        coerenza=report.coerenza,
+        note_coerenza=report.note_coerenza,
+        flagged=flagged,
+    )
+    db.add(log)
+    db.flush()          # assegna log.id e lo rende visibile in plant.growth_logs
+    db.refresh(plant)
+
+    nuovi_badge = check_badges(db, plant.garden, plant, log)
+    db.commit()
+
+    return UpdateResponse(
+        report=report,
+        flagged=flagged,
+        nuovi_badge=[BadgeOut(badge_id=b.badge_id, nome=b.nome) for b in nuovi_badge],
+        punteggio_biodiversita=punteggio_biodiversita(plant.garden.plants),
+    )
