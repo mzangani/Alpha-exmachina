@@ -478,24 +478,24 @@ function disegnaGiardino(g, opzioni = {}) {
   gruppoGiardino = new THREE.Group();
   gruppiPiante = [];
 
-  // Estensione della griglia in celle (minimo 5×4 per non sembrare vuota)
+  // Estensione della griglia in celle (minimo 4×3 per non sembrare vuota).
+  // I contenitori stanno alle coordinate x∈[minX..maxX], z∈[minZ..maxZ].
   const xs = g.containers.map(c => c.posizione.x);
   const zs = g.containers.map(c => c.posizione.z);
-  const maxX = Math.max(4, ...xs) + 1, maxZ = Math.max(3, ...zs) + 1;
+  const maxX = Math.max(3, ...xs), maxZ = Math.max(2, ...zs);
   const minX = Math.min(0, ...xs), minZ = Math.min(0, ...zs);
-  const largh = (maxX - minX) * CELLA + 1.6;
-  const prof  = (maxZ - minZ) * CELLA + 1.6;
-  const centroX = ((maxX + minX) / 2 - 0.5) * CELLA + CELLA / 2;
-  const centroZ = ((maxZ + minZ) / 2 - 0.5) * CELLA + CELLA / 2;
+  // Pavimento quadrato centrato sul baricentro dei contenitori
+  const lato = Math.max(maxX - minX + 1, maxZ - minZ + 1) * CELLA + 1.6;
+  const centroX = (minX + maxX) / 2 * CELLA;
+  const centroZ = (minZ + maxZ) / 2 * CELLA;
 
-  // Pavimento del terrazzo + griglia
   const pavimento = new THREE.Mesh(
-    new THREE.BoxGeometry(largh, 0.12, prof),
+    new THREE.BoxGeometry(lato, 0.12, lato),
     new THREE.MeshLambertMaterial({ color: 0xcbbda2 })
   );
   pavimento.position.set(centroX, -0.06, centroZ);
   gruppoGiardino.add(pavimento);
-  const griglia = new THREE.GridHelper(Math.max(largh, prof), Math.round(Math.max(largh, prof) / CELLA * 2), 0xb3a488, 0xb3a488);
+  const griglia = new THREE.GridHelper(lato, Math.round(lato / CELLA * 2), 0xb3a488, 0xb3a488);
   griglia.position.set(centroX, 0.005, centroZ);
   gruppoGiardino.add(griglia);
 
@@ -533,8 +533,7 @@ function disegnaGiardino(g, opzioni = {}) {
   // Inquadratura iniziale centrata sul giardino (solo al primo disegno)
   if (opzioni.centraCamera) {
     controls.target.set(centroX, 0.4, centroZ);
-    const raggio = Math.max(largh, prof);
-    camera.position.set(centroX + raggio * 0.55, raggio * 0.7, centroZ + raggio * 0.95);
+    camera.position.set(centroX + lato * 0.5, lato * 0.62, centroZ + lato * 0.85);
   }
 }
 
