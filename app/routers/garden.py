@@ -23,6 +23,8 @@ from app.schemas import (
     ContainerOut,
     GardenPlan,
     GardenStateOut,
+    MoveRequest,
+    MoveResponse,
     PlantStateOut,
     Posizione,
     UpdateResponse,
@@ -270,3 +272,66 @@ async def update_plant(
         nuovi_badge=[BadgeOut(badge_id=b.badge_id, nome=b.nome) for b in nuovi_badge],
         punteggio_biodiversita=punteggio_biodiversita(plant.garden.plants),
     )
+
+
+# ---------------------------------------------------------------------------
+# Spostamento pianta (zero AI: solo ricalcolo consociazioni)
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/plant/{plant_id}/move", response_model=MoveResponse)
+def move_plant(
+    plant_id: int,
+    body: MoveRequest,
+    db: Session = Depends(get_db),
+) -> MoveResponse:
+    """Sposta la pianta in un altro contenitore dello stesso giardino e
+    ricalcola bonus/warning di consociazione. Nessuna chiamata AI."""
+    plant = db.get(models.Plant, plant_id)
+    if plant is None:
+        raise HTTPException(status_code=404, detail=f"Pianta {plant_id} non trovata.")
+
+    destinazione = db.get(models.Container, body.container_id)
+    if destinazione is None or destinazione.garden_id != plant.garden_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Il contenitore di destinazione non esiste in questo giardino.",
+        )
+
+    plant.container_id = destinazione.id
+    db.commit()
+    db.refresh(plant)
+
+    return MoveResponse(
+        plant_id=plant.id,
+        container_id=destinazione.id,
+        consociazioni=analizza_consociazioni(plant.garden.plants),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Condivisione (stub per il futuro: nessuna feature social nell'MVP)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/garden/{garden_id}/share")
+def share_garden(garden_id: int, db: Session = Depends(get_db)) -> dict:
+    """Stub: genera uno snapshot JSON "pubblico" del giardino.
+
+    In futuro questo snapshot verrà salvato e servito a un URL condivisibile;
+    per ora ritorna i soli dati non sensibili (niente città né note personali).
+    """
+    garden = _carica_garden(db, garden_id)
+    stato = _stato_giardino(garden)
+    return {
+        "share_version": 1,
+        "snapshot": {
+            "tipo_spazio": stato.tipo_spazio,
+            "punteggio_biodiversita": stato.punteggio_biodiversita,
+            "badges": [b.model_dump() for b in stato.badges],
+            "piante": [
+                {"nome": p.nome, "categoria": p.categoria, "stadio": p.stadio, "salute": p.salute}
+                for p in stato.plants
+            ],
+        },
+    }
