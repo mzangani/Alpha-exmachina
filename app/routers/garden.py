@@ -3,7 +3,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from datetime import datetime, timezone
@@ -108,16 +108,37 @@ def _salva_piano(db: Session, plan: GardenPlan, citta: str) -> models.Garden:
 
 @router.post("/garden/analyze", response_model=AnalyzeResponse)
 async def analyze(
-    foto: UploadFile,
+    foto: UploadFile | None = File(None),
     citta: str = Form(""),
     orientamento: str = Form(""),
     ore_sole: str = Form(""),
     minuti_settimana: str = Form(""),
     preferenze: str = Form(""),
+    descrizione_spazio: str = Form(""),
     db: Session = Depends(get_db),
 ) -> AnalyzeResponse:
-    """Foto dello spazio + questionario → Agente 1 → giardino salvato nel DB."""
-    foto_b64, media_type = await prepara_immagine(foto)
+    """Foto dello spazio (facoltativa) + questionario → Agente 1 → giardino salvato nel DB.
+
+    La foto NON è obbligatoria: se manca, l'Advisor lavora solo su
+    `descrizione_spazio` e sul resto del questionario. Serve però almeno
+    uno dei due, altrimenti l'AI non avrebbe alcuna base su cui ragionare.
+
+    Nota tecnica: quando l'input file del form non ha un file selezionato,
+    il browser lo invia comunque come parte multipart con nome file vuoto
+    — non arriva `None`. Per questo il controllo "foto presente" è
+    `foto is not None and foto.filename`, non un semplice `if foto`.
+    """
+    ha_foto = foto is not None and bool(foto.filename)
+    if not ha_foto and not descrizione_spazio.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Carica una foto dello spazio oppure descrivi i tuoi contenitori (vasi, fioriere, terra) nel campo apposito.",
+        )
+
+    foto_b64: str | None = None
+    media_type: str | None = None
+    if ha_foto:
+        foto_b64, media_type = await prepara_immagine(foto)
 
     plan = analizza_spazio(
         foto_b64=foto_b64,
@@ -127,12 +148,17 @@ async def analyze(
         ore_sole=ore_sole,
         minuti_settimana=minuti_settimana,
         preferenze=preferenze,
+        descrizione_spazio=descrizione_spazio,
     )
 
     if not plan.contenitori_rilevati:
         raise HTTPException(
             status_code=422,
-            detail="L'Advisor non ha rilevato contenitori nella foto: prova con una foto più ampia dello spazio.",
+            detail=(
+                "L'Advisor non ha rilevato contenitori nella foto: prova con una foto più ampia dello spazio."
+                if ha_foto
+                else "L'Advisor non è riuscito a proporre contenitori dalla descrizione: prova a essere più specifico (es. \"2 vasi da 30 cm e una fioriera\")."
+            ),
         )
 
     garden = _salva_piano(db, plan, citta)

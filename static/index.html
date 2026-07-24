@@ -128,9 +128,9 @@
   #modal h2 { color: var(--verde-scuro); margin-bottom: 4px; }
   #modal p.sotto { color: #607d8b; font-size: 13.5px; margin-bottom: 14px; }
   #modal label { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 4px; color: #455a64; }
-  #modal input, #modal select {
+  #modal input, #modal select, #modal textarea {
     width: 100%; padding: 9px; border: 1px solid #cfd8dc; border-radius: 8px; font-size: 14px;
-    background: white;
+    background: white; font-family: inherit; resize: vertical;
   }
   #modal .riga { display: flex; gap: 10px; }
   #modal .riga > div { flex: 1; }
@@ -223,11 +223,16 @@
 <div id="velo">
   <div id="modal">
     <h2>Il tuo spazio</h2>
-    <p class="sotto">Carica una foto del balcone/terrazzo e rispondi: l'agente
-       Garden Advisor progetterà il giardino per te.</p>
+    <p class="sotto">Carica una foto del balcone/terrazzo (o descrivilo a parole se non hai una foto
+       a portata di mano): l'agente Garden Advisor progetterà il giardino per te.</p>
     <form id="form-analyze">
-      <label>Foto dello spazio *</label>
-      <input type="file" name="foto" accept="image/*" capture="environment" required>
+      <label>Foto dello spazio (facoltativa)</label>
+      <input type="file" name="foto" accept="image/*" capture="environment">
+      <label>Descrivi i tuoi contenitori</label>
+      <textarea name="descrizione_spazio" rows="2"
+        placeholder="Es: 2 vasi da 30 cm e una fioriera lunga sul davanzale, oppure un pezzo di terra libero…"></textarea>
+      <p class="sotto" style="margin:2px 0 0">Obbligatoria solo se non carichi una foto: senza nessuna delle due
+        l'Advisor non ha nulla su cui basarsi.</p>
       <div class="riga">
         <div><label>Città</label><input name="citta" placeholder="Milano"></div>
         <div><label>Orientamento</label>
@@ -653,11 +658,24 @@ velo.addEventListener('click', e => { if (e.target === velo) velo.classList.remo
 
 document.getElementById('form-analyze').addEventListener('submit', async e => {
   e.preventDefault();
+  const dati = new FormData(e.target);
+
+  // Un input file senza selezione viene comunque inviato dal browser come
+  // parte multipart con nome vuoto: controlliamo .name, non solo la presenza.
+  const foto = dati.get('foto');
+  const haFoto = !!(foto && foto.name);
+  const descrizione = (dati.get('descrizione_spazio') || '').trim();
+  if (!haFoto && !descrizione) {
+    toast('❌ Carica una foto oppure descrivi i tuoi contenitori (vasi, fioriere, terra…).', 'errore', 6000);
+    return;
+  }
+
   const bottone = document.getElementById('btn-invia');
   bottone.disabled = true;
-  bottone.textContent = '🤖 Il Garden Advisor sta analizzando la foto…';
+  bottone.textContent = haFoto
+    ? '🤖 Il Garden Advisor sta analizzando la foto…'
+    : '🤖 Il Garden Advisor sta ragionando sulla tua descrizione…';
   try {
-    const dati = new FormData(e.target);
     const risposta = await api('/api/garden/analyze', { method: 'POST', body: dati });
     stato.gardenId = risposta.garden_id;
     localStorage.setItem('microgarden_garden_id', String(risposta.garden_id));

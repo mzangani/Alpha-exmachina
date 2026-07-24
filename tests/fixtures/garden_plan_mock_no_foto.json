@@ -1,0 +1,37 @@
+{
+  "spazio": {
+    "tipo": "balcone",
+    "luce_stimata": "mezz_ombra",
+    "note_analisi": "Nessuna foto fornita: questo piano si basa esclusivamente sulla tua descrizione testuale e sulle risposte al questionario, senza alcuna osservazione visiva dello spazio reale. Ho proposto contenitori standard e realistici per un balcone di dimensioni comuni. Carica una foto quando puoi: potrò stimare con precisione i vasi che hai davvero e adattare meglio il piano."
+  },
+  "contenitori_rilevati": [
+    { "id": "vaso_1", "tipo": "vaso", "diametro_cm_stimato": 30, "posizione": { "x": 0, "z": 0 } },
+    { "id": "vaso_2", "tipo": "vaso", "diametro_cm_stimato": 35, "posizione": { "x": 1, "z": 0 } },
+    { "id": "fioriera_1", "tipo": "fioriera", "diametro_cm_stimato": 70, "posizione": { "x": 2, "z": 0 } }
+  ],
+  "piante_consigliate": [
+    {
+      "plant_id": "menta",
+      "contenitore_id": "vaso_1",
+      "motivo": "Tollera bene la mezz'ombra dichiarata e richiede poca manutenzione: una scelta prudente senza vedere l'esposizione reale.",
+      "quando_piantare": "marzo-maggio"
+    },
+    {
+      "plant_id": "lattuga",
+      "contenitore_id": "vaso_2",
+      "motivo": "Cresce bene in vasi di dimensioni standard e si adatta a diverse condizioni di luce.",
+      "quando_piantare": "febbraio-aprile"
+    },
+    {
+      "plant_id": "calendula",
+      "contenitore_id": "fioriera_1",
+      "motivo": "Fiore resistente e a bassa manutenzione, utile per la biodiversità anche in spazi poco caratterizzati.",
+      "quando_piantare": "marzo-maggio"
+    }
+  ],
+  "consigli_generali": [
+    "Questo piano è una base prudente: carica una foto appena possibile per una stima precisa dei tuoi contenitori reali.",
+    "Se il tuo spazio riceve più sole di quanto indicato, potrai spostare piante più esigenti (es. pomodoro, peperoncino) nei vasi più soleggiati.",
+    "Osserva le prime settimane come reagiscono le piante: è il modo più affidabile per capire la luce reale che ricevono."
+  ]
+}

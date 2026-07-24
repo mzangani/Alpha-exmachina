@@ -119,7 +119,7 @@ costa meno, è testabile ed è affidabile.
 
 | Metodo | Rotta | Cosa fa |
 |---|---|---|
-| POST | `/api/garden/analyze` | foto + questionario → Agente 1 → salva il giardino → `GardenPlan` |
+| POST | `/api/garden/analyze` | foto (facoltativa) + questionario → Agente 1 → salva il giardino → `GardenPlan` |
 | GET | `/api/garden/{garden_id}` | stato completo per il rendering (piante, badge, punteggio, consociazioni) |
 | POST | `/api/plant/{plant_id}/update` | foto progresso → Agente 2 → `GrowthLog` + eventuali nuovi badge |
 | PATCH | `/api/plant/{plant_id}/move` | sposta la pianta in un altro contenitore (ricalcolo consociazioni, zero AI) |
@@ -134,6 +134,20 @@ curl -s -X POST http://localhost:8000/api/garden/analyze \
   -F "foto=@la_tua_foto.jpg" \
   -F "citta=Milano" -F "orientamento=sud" -F "ore_sole=6" \
   -F "minuti_settimana=60" -F "preferenze=pomodori e basilico"
+```
+
+**Non hai una foto a portata di mano?** Il campo `foto` è facoltativo: puoi
+descrivere i tuoi contenitori a parole nel campo `descrizione_spazio` (nel
+frontend è la textarea "Descrivi i tuoi contenitori"). Serve almeno uno dei
+due — foto o descrizione — altrimenti l'Advisor non avrebbe nulla su cui
+ragionare e l'API risponde 422 con un messaggio chiaro. Senza foto il piano è
+necessariamente più prudente (contenitori "tipici" invece di quelli visti
+davvero): l'Advisor lo dichiara esplicitamente in `note_analisi`.
+
+```bash
+curl -s -X POST http://localhost:8000/api/garden/analyze \
+  -F "citta=Milano" -F "descrizione_spazio=2 vasi da 30 cm e una fioriera lunga" \
+  -F "orientamento=sud" -F "ore_sole=6" -F "minuti_settimana=60"
 ```
 
 ## Gamification (Python puro)

@@ -3,6 +3,13 @@
 Riceve la foto dello spazio (balcone/terrazzo/davanzale) e le risposte
 del questionario, e produce un `GardenPlan`: contenitori rilevati,
 piante consigliate (SOLO dal catalogo) e consigli pratici.
+
+La foto è FACOLTATIVA: se l'utente non la carica, l'Advisor lavora solo
+sul testo del questionario e su una descrizione libera dei contenitori
+(campo `descrizione_spazio`). In questo caso non c'è alcuna percezione
+visiva reale, quindi il piano è necessariamente meno preciso — il
+system prompt istruisce l'AI a dichiararlo esplicitamente in
+`note_analisi` invece di far finta di aver "visto" qualcosa.
 """
 
 from datetime import datetime
@@ -34,11 +41,16 @@ def _catalogo_sintetico() -> str:
 def _system_prompt() -> str:
     return f"""Sei un agronomo esperto di orti su balcone e micro-coltivazioni urbane in clima mediterraneo.
 
-Il tuo compito: analizzare la FOTO dello spazio dell'utente e le sue risposte al questionario, e progettare un piccolo giardino che massimizzi biodiversità e autoconsumo.
+Il tuo compito: analizzare lo spazio dell'utente (foto e/o descrizione testuale) e le sue risposte al questionario, e progettare un piccolo giardino che massimizzi biodiversità e autoconsumo.
+
+NOTA SULLA FOTO — a volte NON riceverai alcuna immagine, solo un messaggio che inizia con "NESSUNA FOTO FORNITA" seguito da una descrizione testuale scritta dall'utente. In quel caso:
+- non hai nulla da "osservare": basa la stima SOLO sul testo fornito;
+- se la descrizione è vaga o assente, proponi 2-4 contenitori standard e realistici per il tipo di spazio dichiarato (es. per un balcone: un paio di vasi da 30-35 cm e una fioriera da 60-80 cm), senza inventare dettagli che l'utente non ti ha dato;
+- in `note_analisi` dichiara ESPLICITAMENTE che la stima si basa solo sul testo e non su un'osservazione visiva, e consiglia di caricare una foto per un piano più preciso in futuro. Non scrivere mai frasi come "vedo" o "nella foto" se non hai ricevuto un'immagine.
 
 COME PROCEDERE:
-1. Osserva la foto: individua i contenitori visibili (vasi, fioriere, cassette) o lo spazio dove potrebbero starci. Stima il diametro in cm di ciascuno confrontandolo con oggetti riconoscibili (ringhiere, piastrelle, porte). Assegna a ogni contenitore un id breve (es. "vaso_1", "fioriera_1") e una posizione su una griglia: x cresce verso destra, z verso il fondo, celle intere a partire da 0. Se nella foto non ci sono contenitori, proponine 2-4 realistici per lo spazio che vedi.
-2. Valuta la luce dello spazio combinando ciò che vedi (ombre, esposizione, tende) con l'orientamento e le ore di sole dichiarate dall'utente.
+1. Se hai una foto: individua i contenitori visibili (vasi, fioriere, cassette) o lo spazio dove potrebbero starci. Stima il diametro in cm di ciascuno confrontandolo con oggetti riconoscibili (ringhiere, piastrelle, porte). Se NON hai una foto, usa la descrizione testuale dell'utente (vedi nota sopra). In entrambi i casi assegna a ogni contenitore un id breve (es. "vaso_1", "fioriera_1") e una posizione su una griglia: x cresce verso destra, z verso il fondo, celle intere a partire da 0. Se non ci sono contenitori evidenti, proponine 2-4 realistici per lo spazio descritto.
+2. Valuta la luce dello spazio combinando ciò che eventualmente vedi (ombre, esposizione, tende) con l'orientamento e le ore di sole dichiarate dall'utente.
 3. Scegli le piante SOLO dall'elenco del CATALOGO qui sotto, usando ESATTAMENTE gli id indicati. Mai inventare piante o id.
 4. Rispetta questi vincoli:
    - stagionalità: privilegia piante seminabili nel mese corrente o nei 1-2 mesi successivi;
@@ -63,15 +75,21 @@ Rispondi SOLO con un oggetto JSON valido conforme a questo schema, senza alcun t
 
 
 def analizza_spazio(
-    foto_b64: str,
-    media_type: str,
+    foto_b64: str | None,
+    media_type: str | None,
     citta: str,
     orientamento: str,
     ore_sole: str,
     minuti_settimana: str,
     preferenze: str,
+    descrizione_spazio: str = "",
 ) -> GardenPlan:
-    """Esegue l'Agente 1 e ritorna il piano del giardino validato."""
+    """Esegue l'Agente 1 e ritorna il piano del giardino validato.
+
+    `foto_b64`/`media_type` sono `None` quando l'utente non ha caricato
+    una foto: in quel caso l'Advisor ragiona solo su `descrizione_spazio`
+    (e sul resto del questionario), senza alcuna percezione visiva.
+    """
     oggi = datetime.now()
     mese = MESI_IT[oggi.month - 1]
 
@@ -82,21 +100,32 @@ def analizza_spazio(
         f"- Ore di sole dirette stimate al giorno: {ore_sole or 'non indicate'}\n"
         f"- Minuti a settimana dedicabili alla cura: {minuti_settimana or 'non indicati'}\n"
         f"- Cosa ama mangiare/coltivare: {preferenze or 'non indicato'}\n"
-        f"- Mese corrente: {mese}\n\n"
-        f"Analizza la foto allegata e produci il piano del giardino in JSON."
+        f"- Mese corrente: {mese}\n"
     )
 
-    user_content = [
-        {
-            "type": "image",
-            "source": {"type": "base64", "media_type": media_type, "data": foto_b64},
-        },
-        {"type": "text", "text": questionario},
-    ]
+    if foto_b64 is not None:
+        questionario += "\nAnalizza la foto allegata e produci il piano del giardino in JSON."
+        user_content = [
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": foto_b64},
+            },
+            {"type": "text", "text": questionario},
+        ]
+        fixture_name = "garden_plan_mock.json"
+    else:
+        questionario += (
+            f"\nNESSUNA FOTO FORNITA. Descrizione dello spazio scritta dall'utente: "
+            f"{descrizione_spazio.strip() or '(nessuna descrizione fornita)'}\n\n"
+            "Produci comunque il piano del giardino in JSON, seguendo le istruzioni "
+            "per il caso senza foto."
+        )
+        user_content = [{"type": "text", "text": questionario}]
+        fixture_name = "garden_plan_mock_no_foto.json"
 
     return call_agent(
         system_prompt=_system_prompt(),
         user_content=user_content,
         schema=GardenPlan,
-        fixture_name="garden_plan_mock.json",
+        fixture_name=fixture_name,
     )
