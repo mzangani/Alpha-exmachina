@@ -212,6 +212,7 @@
   <div class="chip" id="punteggio" title="Punteggio biodiversità">🌿 0</div>
   <div id="badges"></div>
   <div class="spazio-flex"></div>
+  <button class="azione secondario" id="btn-blocca-vista" title="Blocca la rotazione della camera">🔒 Blocca vista</button>
   <button class="azione secondario" id="btn-vista">📋 Vista lista</button>
   <button class="azione" id="btn-nuovo">📷 Nuovo giardino</button>
 </div>
@@ -420,6 +421,7 @@ let gruppoGiardino = new THREE.Group();
 scene.add(gruppoGiardino);
 let gruppiPiante = [];     // per il raycasting dei click
 let animazioni = [];       // animazioni di crescita in corso
+let contenitoriMesh = [];  // { containerId, mesh } per il drop-target durante il trascinamento
 
 function ridimensiona() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -482,6 +484,7 @@ function meshContenitore(cont) {
   }
   g.position.set(cont.posizione.x * CELLA, 0, cont.posizione.z * CELLA);
   g.userData.altezzaSuolo = cont.tipo === 'terra' ? 0.09 : 0.38;
+  g.userData.corpoMesh = corpo;  // riferimento per tingere il contenitore durante il trascinamento
   return g;
 }
 
@@ -553,6 +556,7 @@ function disegnaGiardino(g, opzioni = {}) {
   scene.remove(gruppoGiardino);
   gruppoGiardino = new THREE.Group();
   gruppiPiante = [];
+  contenitoriMesh = [];
 
   // Estensione della griglia in celle (minimo 4×3 per non sembrare vuota).
   // I contenitori stanno alle coordinate x∈[minX..maxX], z∈[minZ..maxZ].
@@ -580,6 +584,7 @@ function disegnaGiardino(g, opzioni = {}) {
   for (const cont of g.containers) {
     const m = meshContenitore(cont);
     contenitoriPerId[cont.container_id] = { dati: cont, mesh: m, nPiante: 0 };
+    contenitoriMesh.push({ containerId: cont.container_id, mesh: m });
     gruppoGiardino.add(m);
   }
 
@@ -613,30 +618,116 @@ function disegnaGiardino(g, opzioni = {}) {
   }
 }
 
-/* ── Click/tap su una pianta → pannello ──────────────────────────── */
+/* ── Interazione: click apre il pannello, trascinamento sposta la pianta ──
+   La camera ruota trascinando lo sfondo (OrbitControls, invariato). Un
+   trascinamento che INIZIA su una pianta la sposta invece di ruotare la
+   camera: durante il trascinamento l'orbit control viene sospeso in
+   automatico, indipendentemente dal pulsante "Blocca vista" — quello
+   serve per bloccarla in modo persistente (utile quando si vuole solo
+   cliccare più piante di fila senza che la vista si sposti per sbaglio).
+   ──────────────────────────────────────────────────────────────────── */
 const raycaster = new THREE.Raycaster();
 const puntatore = new THREE.Vector2();
+const pianoTerra = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const puntoTerra = new THREE.Vector3();
+
 let ultimoPointerDown = { x: 0, y: 0, t: 0 };
+let trascinamento = null;   // { plantId, containerAttuale, iniziato, candidatoContainerId }
+let vistaBloccata = false;
+let contenitoreEvidenziatoId = null;
 
-canvas.addEventListener('pointerdown', e => {
-  ultimoPointerDown = { x: e.clientX, y: e.clientY, t: performance.now() };
-});
-canvas.addEventListener('pointerup', e => {
-  // Ignora i drag della camera: conta solo un vero click/tap
-  const dx = e.clientX - ultimoPointerDown.x, dy = e.clientY - ultimoPointerDown.y;
-  if (Math.hypot(dx, dy) > 6 || performance.now() - ultimoPointerDown.t > 400) return;
-
+function aggiornaRaycasterDaEvento(e) {
   puntatore.x = (e.clientX / window.innerWidth) * 2 - 1;
   puntatore.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(puntatore, camera);
+}
+
+function evidenziaContenitore(containerId) {
+  if (contenitoreEvidenziatoId === containerId) return;
+  rimuoviEvidenziazione();
+  const voce = contenitoriMesh.find(c => c.containerId === containerId);
+  if (voce) {
+    voce.mesh.userData.corpoMesh.material.emissive.setHex(0x2e7d32);
+    contenitoreEvidenziatoId = containerId;
+  }
+}
+function rimuoviEvidenziazione() {
+  if (contenitoreEvidenziatoId == null) return;
+  const voce = contenitoriMesh.find(c => c.containerId === contenitoreEvidenziatoId);
+  if (voce) voce.mesh.userData.corpoMesh.material.emissive.setHex(0x000000);
+  contenitoreEvidenziatoId = null;
+}
+
+canvas.addEventListener('pointerdown', e => {
+  ultimoPointerDown = { x: e.clientX, y: e.clientY, t: performance.now() };
+  aggiornaRaycasterDaEvento(e);
   const colpi = raycaster.intersectObjects(gruppiPiante, true);
-  if (colpi.length > 0) {
+  if (colpi.length > 0 && stato.giardino) {
     const plantId = colpi[0].object.userData.plantId;
     const pianta = stato.giardino.plants.find(p => p.plant_id === plantId);
-    if (pianta) apriPannello(pianta);
-  } else {
-    chiudiPannello();
+    if (pianta) {
+      trascinamento = {
+        plantId, containerAttuale: pianta.container_id,
+        iniziato: false, candidatoContainerId: null,
+      };
+    }
   }
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!trascinamento) return;
+  const dx = e.clientX - ultimoPointerDown.x, dy = e.clientY - ultimoPointerDown.y;
+  if (!trascinamento.iniziato) {
+    if (Math.hypot(dx, dy) <= 6) return;  // sotto soglia: potrebbe essere solo un click
+    trascinamento.iniziato = true;
+    controls.enabled = false;  // sospende la camera per la durata del trascinamento
+  }
+  aggiornaRaycasterDaEvento(e);
+  if (raycaster.ray.intersectPlane(pianoTerra, puntoTerra)) {
+    let candidato = null, distanzaMin = CELLA * 0.65;
+    for (const voce of contenitoriMesh) {
+      const d = Math.hypot(puntoTerra.x - voce.mesh.position.x, puntoTerra.z - voce.mesh.position.z);
+      if (d < distanzaMin) { distanzaMin = d; candidato = voce.containerId; }
+    }
+    trascinamento.candidatoContainerId = candidato;
+    if (candidato != null) evidenziaContenitore(candidato); else rimuoviEvidenziazione();
+  }
+});
+
+canvas.addEventListener('pointerup', e => {
+  if (trascinamento) {
+    const t = trascinamento;
+    trascinamento = null;
+    rimuoviEvidenziazione();
+
+    if (t.iniziato) {
+      // Era un vero trascinamento: ripristina la camera secondo il blocco
+      // scelto dall'utente, e sposta la pianta se il rilascio è avvenuto
+      // su un contenitore diverso da quello di partenza.
+      controls.enabled = !vistaBloccata;
+      if (t.candidatoContainerId != null && t.candidatoContainerId !== t.containerAttuale) {
+        spostaPianta(t.plantId, t.candidatoContainerId, t.containerAttuale);
+      }
+      return;
+    }
+    // Nessun movimento oltre soglia: è stato un click sulla pianta
+    if (performance.now() - ultimoPointerDown.t > 400) return;
+    const pianta = stato.giardino.plants.find(p => p.plant_id === t.plantId);
+    if (pianta) apriPannello(pianta);
+    return;
+  }
+
+  // Click fuori da qualunque pianta: se non è stato un drag della camera, chiude il pannello
+  const dx = e.clientX - ultimoPointerDown.x, dy = e.clientY - ultimoPointerDown.y;
+  if (Math.hypot(dx, dy) > 6 || performance.now() - ultimoPointerDown.t > 400) return;
+  chiudiPannello();
+});
+
+document.getElementById('btn-blocca-vista').addEventListener('click', () => {
+  vistaBloccata = !vistaBloccata;
+  controls.enabled = !vistaBloccata;
+  document.getElementById('btn-blocca-vista').textContent =
+    vistaBloccata ? '🔓 Sblocca vista' : '🔒 Blocca vista';
 });
 
 /* ════════════════════════════════════════════════════════════════════
@@ -954,6 +1045,14 @@ window.__mg_schermoPianta = (plantId) => {
   v.project(camera);
   return { x: (v.x + 1) / 2 * window.innerWidth, y: (1 - v.y) / 2 * window.innerHeight };
 };
+window.__mg_schermoContenitore = (containerId) => {
+  const voce = contenitoriMesh.find(c => c.containerId === containerId);
+  if (!voce) return null;
+  const v = new THREE.Box3().setFromObject(voce.mesh).getCenter(new THREE.Vector3());
+  v.project(camera);
+  return { x: (v.x + 1) / 2 * window.innerWidth, y: (1 - v.y) / 2 * window.innerHeight };
+};
+window.__mg_statoCamera = () => ({ enabled: controls.enabled, vistaBloccata });
 
 (async function avvia() {
   try {

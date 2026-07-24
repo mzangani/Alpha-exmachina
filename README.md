@@ -117,6 +117,12 @@ costa meno, è testabile ed è affidabile.
   precisione (aggiungere una pianta, spostarla, aggiornarne la crescita) senza
   affidarsi al click nella scena 3D. Sono la stessa pagina e lo stesso stato:
   cambiando vista non si ricarica nulla, solo cosa viene mostrato.
+- **Trascina per spostare, blocca per non ruotare**: nella scena 3D si può
+  prendere una pianta col mouse/dito e trascinarla su un altro contenitore per
+  spostarla (la camera si sospende da sola durante il trascinamento, per non
+  interferire). Il pulsante "🔒 Blocca vista" congela la rotazione/zoom della
+  camera in modo persistente, utile quando si vuole solo cliccare tra più
+  piante senza che la vista si sposti per sbaglio.
 - **Contratti JSON per gli agenti**: i system prompt IMPONGONO all'AI di rispondere
   solo con JSON conforme agli schemi di `app/schemas.py`. Il testo libero è
   simpatico nelle chat, ma un'app ha bisogno di dati strutturati.
