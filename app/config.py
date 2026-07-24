@@ -33,10 +33,15 @@ class Settings(BaseSettings):
 
     # Dice a pydantic-settings di leggere il file .env nella radice
     # del progetto, ignorando eventuali variabili non dichiarate qui.
+    # protected_namespaces=(): il campo `model_name` inizia per "model_",
+    # prefisso che Pydantic riserva ai suoi metodi interni (model_dump,
+    # model_validate, ...); qui è solo il nome di un nostro campo, quindi
+    # disattiviamo l'avviso.
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        protected_namespaces=(),
     )
 
 
