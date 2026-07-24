@@ -136,7 +136,7 @@ costa meno, è testabile ed è affidabile.
 |---|---|---|
 | POST | `/api/garden/analyze` | foto (facoltativa) + questionario → Agente 1 → salva il giardino → `GardenPlan` |
 | GET | `/api/garden/{garden_id}` | stato completo per il rendering (piante, badge, punteggio, consociazioni) |
-| POST | `/api/plant/{plant_id}/update` | foto progresso → Agente 2 → `GrowthLog` + eventuali nuovi badge |
+| POST | `/api/plant/{plant_id}/update` | foto progresso (facoltativa) → Agente 2 → `GrowthLog` + eventuali nuovi badge; senza foto, aggiornamento manuale di stadio/salute (mai badge) |
 | PATCH | `/api/plant/{plant_id}/move` | sposta la pianta in un altro contenitore (ricalcolo consociazioni, zero AI) |
 | POST | `/api/garden/{garden_id}/containers` | aggiunge un contenitore a mano (posizione auto-assegnata, zero AI) |
 | POST | `/api/garden/{garden_id}/plants` | aggiunge una pianta dal catalogo a un contenitore esistente (zero AI) |
@@ -168,6 +168,22 @@ curl -s -X POST http://localhost:8000/api/garden/analyze \
   -F "orientamento=sud" -F "ore_sole=6" -F "minuti_settimana=60"
 ```
 
+**Non hai una foto di progresso a portata di mano?** Anche `foto` in
+`/api/plant/{plant_id}/update` è facoltativa: se manca, puoi impostare a mano
+`stadio` (0.0-1.0), `salute` e `frutti_visibili` — utile per registrare al
+volo quello che vedi senza scattare una foto. In questo caso l'Agente 2 non
+viene affatto chiamato: il salvataggio è puro Python, e per coerenza con la
+"regola d'oro" del progetto (l'AI serve solo a percepire, mai a decidere)
+questi aggiornamenti sono marcati `manuale` e trattati esattamente come una
+foto giudicata poco plausibile — **niente badge né streak** (vedi Anti-cheat
+sotto). Il frontend espone questa via sia nel pannello 3D della pianta sia
+nella vista lista, con uno slider per lo stadio e un menu per la salute.
+
+```bash
+curl -s -X POST http://localhost:8000/api/plant/1/update \
+  -F "stadio=0.5" -F "salute=buona"
+```
+
 ## Gamification (Python puro)
 
 **Badge** (`app/game/badges.py`) — assegnati solo se la foto è credibile (`coerenza ≥ 0.5`):
@@ -192,7 +208,11 @@ punteggio = (n_specie_diverse × 2)
 **Anti-cheat**: l'Agente 2 riceve anche il report precedente e la sua data, e valuta
 se la nuova foto è plausibile (stessa pianta? progressione credibile?). Sotto
 `coerenza 0.5` lo stato si aggiorna comunque, ma il report è `flagged` e **nessun
-badge viene assegnato**.
+badge viene assegnato**. Un aggiornamento manuale (senza foto, vedi sopra) usa
+la stessa infrastruttura: viene salvato con `coerenza=0.0` e `flagged=True` (più
+un campo `manuale=True` distinto, solo per messaggistica onesta nel frontend),
+quindi `check_badges()` lo esclude allo stesso identico modo — nessuna logica
+duplicata per l'anti-cheat.
 
 ## Costi stimati (MOCK_MODE=false)
 

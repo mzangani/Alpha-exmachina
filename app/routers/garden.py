@@ -2,6 +2,7 @@
 
 import json
 import logging
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -25,6 +26,7 @@ from app.schemas import (
     ContainerOut,
     GardenPlan,
     GardenStateOut,
+    GrowthReport,
     MoveContainerRequest,
     MoveRequest,
     MoveResponse,
@@ -208,6 +210,7 @@ def _stato_pianta(plant: models.Plant) -> PlantStateOut:
         stato.consigli = json.loads(ultimo.consigli_json)
         stato.giorni_al_raccolto_stimati = ultimo.giorni_al_raccolto_stimati
         stato.flagged = ultimo.flagged
+        stato.manuale = ultimo.manuale
     return stato
 
 
@@ -414,37 +417,68 @@ def _report_da_log(log: models.GrowthLog) -> dict:
 @router.post("/plant/{plant_id}/update", response_model=UpdateResponse)
 async def update_plant(
     plant_id: int,
-    foto: UploadFile,
+    foto: UploadFile | None = File(None),
+    stadio: Optional[float] = Form(None, ge=0.0, le=1.0),
+    salute: Optional[Literal["ottima", "buona", "sofferente", "critica"]] = Form(None),
+    frutti_visibili: bool = Form(False),
     db: Session = Depends(get_db),
 ) -> UpdateResponse:
-    """Foto di progresso → Agente 2 → GrowthLog → badge (Python puro)."""
+    """Foto di progresso (facoltativa) → Agente 2 → GrowthLog → badge.
+
+    Senza foto si può comunque aggiornare lo stadio a mano (utile quando non
+    hai una foto a portata di mano): in quel caso l'AI non entra in gioco
+    affatto, e l'aggiornamento è marcato "manuale" — niente badge né streak,
+    per non aggirare l'anti-cheat con dati inventati (stessa infrastruttura
+    già usata per una foto giudicata poco plausibile dall'AI).
+    """
     plant = db.get(models.Plant, plant_id)
     if plant is None:
         raise HTTPException(status_code=404, detail=f"Pianta {plant_id} non trovata.")
 
-    foto_b64, media_type = await prepara_immagine(foto)
-    scheda = pianta_per_id(plant.species_id) or {}
+    ha_foto = foto is not None and bool(foto.filename)
+    if not ha_foto and stadio is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Carica una foto di progresso oppure imposta almeno lo stadio di maturazione manualmente.",
+        )
 
-    # Contesto per l'anti-cheat: ultimo report e la sua data (se esistono)
-    ultimo_log = plant.growth_logs[-1] if plant.growth_logs else None
-    creato = plant.created_at
-    if creato.tzinfo is None:  # SQLite può restituire datetime "naive"
-        creato = creato.replace(tzinfo=timezone.utc)
-    giorni_a_dimora = (datetime.now(timezone.utc) - creato).days
+    if ha_foto:
+        foto_b64, media_type = await prepara_immagine(foto)
+        scheda = pianta_per_id(plant.species_id) or {}
 
-    report = valuta_crescita(
-        foto_b64=foto_b64,
-        media_type=media_type,
-        nome_pianta=scheda.get("nome", plant.species_id),
-        categoria=scheda.get("categoria", ""),
-        giorni_raccolto_attesi=scheda.get("giorni_raccolto", 60),
-        giorni_dalla_messa_a_dimora=giorni_a_dimora,
-        report_precedente=_report_da_log(ultimo_log) if ultimo_log else None,
-        data_report_precedente=ultimo_log.created_at if ultimo_log else None,
-    )
+        # Contesto per l'anti-cheat: ultimo report e la sua data (se esistono)
+        ultimo_log = plant.growth_logs[-1] if plant.growth_logs else None
+        creato = plant.created_at
+        if creato.tzinfo is None:  # SQLite può restituire datetime "naive"
+            creato = creato.replace(tzinfo=timezone.utc)
+        giorni_a_dimora = (datetime.now(timezone.utc) - creato).days
 
-    # L'AI giudica, il codice decide: sotto soglia il report è "flagged"
-    flagged = report.coerenza < SOGLIA_COERENZA
+        report = valuta_crescita(
+            foto_b64=foto_b64,
+            media_type=media_type,
+            nome_pianta=scheda.get("nome", plant.species_id),
+            categoria=scheda.get("categoria", ""),
+            giorni_raccolto_attesi=scheda.get("giorni_raccolto", 60),
+            giorni_dalla_messa_a_dimora=giorni_a_dimora,
+            report_precedente=_report_da_log(ultimo_log) if ultimo_log else None,
+            data_report_precedente=ultimo_log.created_at if ultimo_log else None,
+        )
+        # L'AI giudica, il codice decide: sotto soglia il report è "flagged"
+        flagged = report.coerenza < SOGLIA_COERENZA
+        manuale = False
+    else:
+        report = GrowthReport(
+            stadio=stadio,
+            salute=salute or "buona",
+            problemi=[],
+            consigli=[],
+            frutti_visibili=frutti_visibili,
+            giorni_al_raccolto_stimati=None,
+            coerenza=0.0,
+            note_coerenza="Aggiornamento manuale, senza foto: nessun badge o streak per questo passaggio.",
+        )
+        flagged = True
+        manuale = True
 
     log = models.GrowthLog(
         plant_id=plant.id,
@@ -457,6 +491,7 @@ async def update_plant(
         coerenza=report.coerenza,
         note_coerenza=report.note_coerenza,
         flagged=flagged,
+        manuale=manuale,
     )
     db.add(log)
     db.flush()          # assegna log.id e lo rende visibile in plant.growth_logs

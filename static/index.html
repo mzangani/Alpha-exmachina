@@ -101,6 +101,10 @@
   }
   .vuoto-contenitore, .vuoto-lista { color: #90a4ae; font-size: 13px; font-style: italic; }
   .salute.mini { font-size: 11px; padding: 2px 8px; }
+  .azioni-manuale-lista { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+  .azioni-manuale-lista input[type=range] { flex: 1; min-width: 80px; }
+  .azioni-manuale-lista .val-manuale-stadio { font-size: 12px; color: #607d8b; min-width: 34px; text-align: right; }
+  .azioni-manuale-lista select { padding: 5px; border-radius: 6px; border: 1px solid #cfd8dc; font-size: 12px; }
 
   /* ── Consociazioni (in basso a sinistra) ─────────────────────────── */
   #consociazioni {
@@ -154,6 +158,14 @@
   #pannello .blocco-azioni { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
   #pannello select {
     padding: 8px; border-radius: 8px; border: 1px solid #cfd8dc; font-size: 13.5px; width: 100%;
+  }
+  #pannello .blocco-manuale { display: flex; flex-direction: column; gap: 8px; }
+  #pannello .blocco-manuale input[type=range] { width: 100%; }
+  #pannello .blocco-manuale .etichetta-manuale {
+    font-size: 12.5px; color: #607d8b; display: flex; justify-content: space-between;
+  }
+  #pannello .blocco-manuale label.chk {
+    display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #455a64;
   }
 
   /* ── Modal "Nuovo giardino" ──────────────────────────────────────── */
@@ -248,10 +260,7 @@
   <div style="font-size:13px;color:#607d8b"><span id="p-stadio">0</span>% di maturazione
     <span id="p-raccolto"></span></div>
   <div><span class="salute buona" id="p-salute">buona</span></div>
-  <div class="avviso-flag" id="p-flag" style="display:none">
-    ⚠️ L'ultima foto è sembrata poco plausibile all'AI: lo stato è aggiornato
-    ma niente badge. Carica una foto reale della pianta!
-  </div>
+  <div class="avviso-flag" id="p-flag" style="display:none"></div>
   <section id="p-sez-problemi" style="display:none">
     <h3>Problemi rilevati</h3><ul id="p-problemi"></ul>
   </section>
@@ -271,6 +280,21 @@
     <select id="sel-contenitore"></select>
     <button class="azione" id="btn-sposta" style="background:var(--terra)">📦 Sposta qui</button>
   </div>
+  <section>
+    <h3>Aggiorna manualmente (senza foto)</h3>
+    <div class="blocco-manuale">
+      <div class="etichetta-manuale"><span>Stadio di maturazione</span><span><span id="p-manuale-stadio-val">0</span>%</span></div>
+      <input type="range" id="p-manuale-stadio" min="0" max="100" value="0">
+      <select id="p-manuale-salute">
+        <option value="ottima">ottima</option>
+        <option value="buona">buona</option>
+        <option value="sofferente">sofferente</option>
+        <option value="critica">critica</option>
+      </select>
+      <label class="chk"><input type="checkbox" id="p-manuale-frutti"> Frutti/fiori visibili</label>
+      <button class="azione secondario" id="btn-manuale">✏️ Aggiorna manualmente</button>
+    </div>
+  </section>
 </aside>
 
 <!-- Schermata iniziale se non c'è ancora un giardino -->
@@ -808,7 +832,28 @@ function apriPannello(pianta) {
   const salute = document.getElementById('p-salute');
   salute.textContent = pianta.salute;
   salute.className = `salute ${pianta.salute}`;
-  document.getElementById('p-flag').style.display = pianta.flagged ? 'block' : 'none';
+
+  // Un log manuale e una foto giudicata poco plausibile condividono lo
+  // stesso "flagged" (niente badge), ma il messaggio dev'essere onesto:
+  // non c'è stata nessuna foto né AI coinvolta in un aggiornamento manuale.
+  const flagDiv = document.getElementById('p-flag');
+  if (pianta.manuale) {
+    flagDiv.textContent = '✏️ Ultimo aggiornamento impostato a mano, senza foto: stato aggiornato ma niente badge per questo passaggio.';
+    flagDiv.style.display = 'block';
+  } else if (pianta.flagged) {
+    flagDiv.textContent = "⚠️ L'ultima foto è sembrata poco plausibile all'AI: lo stato è aggiornato ma niente badge. Carica una foto reale della pianta!";
+    flagDiv.style.display = 'block';
+  } else {
+    flagDiv.style.display = 'none';
+  }
+
+  // Controlli manuali: partono dallo stato attuale, così se l'utente cambia
+  // solo la salute non sposta indietro lo stadio (o viceversa).
+  const stadioPct = Math.round(pianta.stadio * 100);
+  document.getElementById('p-manuale-stadio').value = stadioPct;
+  document.getElementById('p-manuale-stadio-val').textContent = stadioPct;
+  document.getElementById('p-manuale-salute').value = pianta.salute;
+  document.getElementById('p-manuale-frutti').checked = !!pianta.frutti_visibili;
 
   const riempi = (idSezione, idLista, voci) => {
     document.getElementById(idSezione).style.display = voci.length ? 'block' : 'none';
@@ -949,6 +994,42 @@ inputFoto.addEventListener('change', async () => {
   }
 });
 
+/* ── Aggiornamento manuale (senza foto, zero AI) ──────────────────────
+   Stesso endpoint della foto di progresso, ma senza il campo "foto": il
+   backend lo riconosce e salta l'Agente 2, marcando il log "manuale" —
+   niente badge né streak, esattamente come una foto poco plausibile. ── */
+document.getElementById('p-manuale-stadio').addEventListener('input', e => {
+  document.getElementById('p-manuale-stadio-val').textContent = e.target.value;
+});
+
+async function aggiornaCrescitaManuale(plantId, stadioPct, salute, fruttiVisibili) {
+  try {
+    const dati = new FormData();
+    dati.append('stadio', String(stadioPct / 100));
+    dati.append('salute', salute);
+    dati.append('frutti_visibili', fruttiVisibili ? 'true' : 'false');
+    await api(`/api/plant/${plantId}/update`, { method: 'POST', body: dati });
+    await caricaGiardino({ animaPlantId: plantId });
+    if (stato.piantaSelezionata && stato.piantaSelezionata.plant_id === plantId) {
+      const aggiornata = stato.giardino.plants.find(p => p.plant_id === plantId);
+      if (aggiornata) apriPannello(aggiornata);
+    }
+    toast(`✏️ Stadio impostato manualmente al ${stadioPct}% — nessun badge per questo passaggio.`, '', 5500);
+  } catch (errore) {
+    toast(`❌ ${errore.message}`, 'errore', 7000);
+  }
+}
+
+document.getElementById('btn-manuale').addEventListener('click', () => {
+  if (!stato.piantaSelezionata) return;
+  aggiornaCrescitaManuale(
+    stato.piantaSelezionata.plant_id,
+    Number(document.getElementById('p-manuale-stadio').value),
+    document.getElementById('p-manuale-salute').value,
+    document.getElementById('p-manuale-frutti').checked,
+  );
+});
+
 /* ── Spostamento pianta (zero AI) — anch'essa parametrizzata ─────── */
 async function spostaPianta(plantId, containerId, piantaCorrente) {
   if (piantaCorrente && containerId === piantaCorrente) {
@@ -1015,13 +1096,26 @@ function disegnaListaClassica(g) {
           <span class="salute mini ${p.salute}">${escapeHtml(p.salute)}</span>
         </div>
         <div class="barra-stadio-mini"><div style="width:${Math.round(p.stadio * 100)}%"></div></div>
-        <div class="nota-stadio-lista">${Math.round(p.stadio * 100)}% di maturazione${p.flagged ? ' · ⚠️ non verificato' : ''}</div>
+        <div class="nota-stadio-lista">${Math.round(p.stadio * 100)}% di maturazione${
+          p.manuale ? ' · ✏️ impostato a mano' : (p.flagged ? ' · ⚠️ non verificato' : '')
+        }</div>
         <div class="azioni-pianta-lista">
           <button class="azione piccolo btn-foto-lista" data-plant-id="${p.plant_id}">📷 Aggiorna crescita</button>
           <select class="sel-sposta-lista" data-plant-id="${p.plant_id}" data-container-attuale="${c.container_id}">
             ${g.containers.map(cc => `<option value="${cc.container_id}" ${cc.container_id === c.container_id ? 'selected' : ''}>${escapeHtml(cc.codice)}</option>`).join('')}
           </select>
           <button class="azione piccolo secondario btn-sposta-lista" data-plant-id="${p.plant_id}">📦 Sposta</button>
+        </div>
+        <div class="azioni-manuale-lista">
+          <input type="range" class="input-manuale-stadio-lista" data-plant-id="${p.plant_id}"
+            min="0" max="100" value="${Math.round(p.stadio * 100)}">
+          <span class="val-manuale-stadio" data-plant-id="${p.plant_id}">${Math.round(p.stadio * 100)}%</span>
+          <select class="sel-manuale-salute-lista" data-plant-id="${p.plant_id}">
+            ${['ottima', 'buona', 'sofferente', 'critica'].map(s =>
+              `<option value="${s}" ${s === p.salute ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+          <button class="azione piccolo secondario btn-manuale-lista" data-plant-id="${p.plant_id}"
+            data-frutti-attuali="${p.frutti_visibili}">✏️ Manuale</button>
         </div>
       </div>
     `).join('') || '<p class="vuoto-contenitore">Nessuna pianta qui ancora.</p>';
@@ -1075,7 +1169,27 @@ document.getElementById('lista-contenitori').addEventListener('click', e => {
     const x = Number(document.querySelector(`.input-pos-x[data-container-id="${containerId}"]`).value);
     const z = Number(document.querySelector(`.input-pos-z[data-container-id="${containerId}"]`).value);
     spostaContenitore(containerId, x, z);
+    return;
   }
+  const btnManuale = e.target.closest('.btn-manuale-lista');
+  if (btnManuale) {
+    const plantId = Number(btnManuale.dataset.plantId);
+    const stadioPct = Number(document.querySelector(`.input-manuale-stadio-lista[data-plant-id="${plantId}"]`).value);
+    const salute = document.querySelector(`.sel-manuale-salute-lista[data-plant-id="${plantId}"]`).value;
+    // Niente checkbox frutti nella vista compatta: si preserva il valore
+    // attuale invece di resettarlo silenziosamente a "non visibili".
+    const fruttiAttuali = btnManuale.dataset.fruttiAttuali === 'true';
+    aggiornaCrescitaManuale(plantId, stadioPct, salute, fruttiAttuali);
+  }
+});
+
+// Aggiorna la percentuale mostrata accanto allo slider mentre si trascina
+// (evento "input", non "click": la delegazione sopra non lo intercetta).
+document.getElementById('lista-contenitori').addEventListener('input', e => {
+  const range = e.target.closest('.input-manuale-stadio-lista');
+  if (!range) return;
+  const etichetta = document.querySelector(`.val-manuale-stadio[data-plant-id="${range.dataset.plantId}"]`);
+  if (etichetta) etichetta.textContent = `${range.value}%`;
 });
 
 async function aggiungiContenitore(tipo) {

@@ -127,6 +127,12 @@ class GrowthLog(Base):
     note_coerenza: Mapped[str] = mapped_column(Text, default="")
     flagged: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # True se l'utente ha impostato stadio/salute a mano, senza foto né AI.
+    # Un log manuale ha SEMPRE coerenza 0.0 e flagged True (vedi
+    # routers/garden.py): non deve mai contare per badge o streak, esattamente
+    # come una foto che l'AI ha giudicato poco plausibile.
+    manuale: Mapped[bool] = mapped_column(Boolean, default=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=adesso)
 
     plant: Mapped["Plant"] = relationship(back_populates="growth_logs")

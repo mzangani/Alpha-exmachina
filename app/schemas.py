@@ -139,6 +139,9 @@ class PlantStateOut(BaseModel):
     consigli: list[str] = []
     giorni_al_raccolto_stimati: Optional[int] = None
     flagged: bool = False
+    # True se l'ultimo aggiornamento è stato manuale (senza foto/AI): serve
+    # al frontend per mostrare un messaggio diverso da "foto poco plausibile".
+    manuale: bool = False
     motivo: str = ""
     quando_piantare: str = ""
     n_aggiornamenti: int = 0
