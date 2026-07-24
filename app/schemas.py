@@ -213,9 +213,12 @@ class AddPlantRequest(BaseModel):
     container_id: int
 
 
-class MoveContainerRequest(BaseModel):
-    """Body di PATCH /api/garden/{id}/containers/{container_id}: nuova
-    posizione sulla griglia (trascinamento nella scena 3D, o coordinate
-    inserite a mano dalla vista lista)."""
+class UpdateContainerRequest(BaseModel):
+    """Body di PATCH /api/garden/{id}/containers/{container_id}: aggiorna
+    posizione, tipo e/o diametro di un contenitore esistente. Tutti i campi
+    sono facoltativi (si aggiorna solo ciò che viene inviato), ma va
+    fornito almeno uno — altrimenti non c'è nulla da fare."""
 
-    posizione: Posizione
+    posizione: Optional[Posizione] = None
+    tipo: Optional[Literal["vaso", "fioriera", "cassetta", "terra"]] = None
+    diametro_cm: Optional[int] = Field(default=None, ge=5, le=300)

@@ -111,12 +111,14 @@ costa meno, è testabile ed è affidabile.
 - **Un solo file HTML**: niente build step, niente framework. Il browser fa solo
   due cose: disegnare cubi (Three.js) e chiamare le API (`fetch`). Tutta
   l'intelligenza sta nel backend Python.
-- **Due viste sullo stesso stato**: il pulsante "📋 Vista lista" nell'HUD alterna
-  tra la scena voxel e una vista classica a schede (un contenitore, le sue
-  piante, i bottoni azione) — utile su schermi piccoli o quando serve
-  precisione (aggiungere una pianta, spostarla, aggiornarne la crescita) senza
-  affidarsi al click nella scena 3D. Sono la stessa pagina e lo stesso stato:
-  cambiando vista non si ricarica nulla, solo cosa viene mostrato.
+- **Due viste sullo stesso stato**: il pulsante "📋 Vista lista" nell'HUD apre
+  una sidebar a schede (un contenitore, le sue piante, i bottoni azione) —
+  utile su schermi piccoli o quando serve precisione (aggiungere una pianta,
+  spostarla, aggiornarne la crescita) senza affidarsi al click nella scena 3D.
+  È una sidebar SOPRA la scena 3D, non uno scambio a schermo intero: il
+  giardino resta visibile e renderizzato dietro la lista, non sparisce mai.
+  Sono la stessa pagina e lo stesso stato: aprendo/chiudendo la lista non si
+  ricarica nulla, solo cosa viene mostrato in più.
 - **Trascina per spostare, blocca per non ruotare**: nella scena 3D si può
   prendere una pianta col mouse/dito e trascinarla su un altro contenitore per
   spostarla, oppure prendere un intero contenitore e trascinarlo su un'altra
@@ -125,7 +127,9 @@ costa meno, è testabile ed è affidabile.
   non interferire. Il pulsante "🔒 Blocca vista" congela la rotazione/zoom
   della camera in modo persistente, utile quando si vuole solo cliccare tra
   più piante senza che la vista si sposti per sbaglio. Dalla vista lista si
-  può anche spostare un contenitore inserendo le coordinate x/z a mano.
+  può anche spostare un contenitore inserendo le coordinate x/z a mano, oppure
+  cambiarne tipo e diametro (il colore nel rendering voxel dipende dal tipo,
+  quindi cambia di conseguenza — non c'è un campo "colore" separato).
 - **Contratti JSON per gli agenti**: i system prompt IMPONGONO all'AI di rispondere
   solo con JSON conforme agli schemi di `app/schemas.py`. Il testo libero è
   simpatico nelle chat, ma un'app ha bisogno di dati strutturati.
@@ -140,7 +144,7 @@ costa meno, è testabile ed è affidabile.
 | PATCH | `/api/plant/{plant_id}/move` | sposta la pianta in un altro contenitore (ricalcolo consociazioni, zero AI) |
 | POST | `/api/garden/{garden_id}/containers` | aggiunge un contenitore a mano (posizione auto-assegnata, zero AI) |
 | POST | `/api/garden/{garden_id}/plants` | aggiunge una pianta dal catalogo a un contenitore esistente (zero AI) |
-| PATCH | `/api/garden/{garden_id}/containers/{container_id}` | sposta il contenitore in un'altra cella della griglia (409 se occupata, zero AI) |
+| PATCH | `/api/garden/{garden_id}/containers/{container_id}` | aggiorna posizione (409 se cella occupata), tipo e/o diametro di un contenitore esistente — tutti i campi sono facoltativi, campi omessi non cambiano (zero AI) |
 | GET | `/api/plants/catalog` | il contenuto di `data/plants.json` |
 | POST | `/api/garden/{garden_id}/share` | *(stub futuro)* snapshot JSON pubblico del giardino |
 | GET | `/health` | `{"status": "ok", "mock_mode": true/false}` |

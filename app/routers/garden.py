@@ -27,11 +27,11 @@ from app.schemas import (
     GardenPlan,
     GardenStateOut,
     GrowthReport,
-    MoveContainerRequest,
     MoveRequest,
     MoveResponse,
     PlantStateOut,
     Posizione,
+    UpdateContainerRequest,
     UpdateResponse,
 )
 
@@ -353,15 +353,23 @@ def add_plant(
 
 
 @router.patch("/garden/{garden_id}/containers/{container_id}", response_model=ContainerOut)
-def move_container(
+def update_container(
     garden_id: int,
     container_id: int,
-    body: MoveContainerRequest,
+    body: UpdateContainerRequest,
     db: Session = Depends(get_db),
 ) -> ContainerOut:
-    """Sposta un contenitore in un'altra cella della griglia (trascinamento
-    nella scena 3D, o coordinate inserite a mano dalla vista lista). Nessuna
-    chiamata AI: è solo aggiornamento di stato."""
+    """Aggiorna un contenitore esistente: posizione (trascinamento nella
+    scena 3D, o coordinate inserite a mano dalla vista lista) e/o tipo e
+    diametro (per correggere una stima iniziale, dalla vista lista). Nessuna
+    chiamata AI: è solo aggiornamento di stato, applicato solo ai campi
+    effettivamente inviati."""
+    if body.posizione is None and body.tipo is None and body.diametro_cm is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Specifica almeno un campo da aggiornare: posizione, tipo o diametro_cm.",
+        )
+
     garden = _carica_garden(db, garden_id)
     contenitore = next((c for c in garden.containers if c.id == container_id), None)
     if contenitore is None:
@@ -370,18 +378,24 @@ def move_container(
             detail=f"Contenitore {container_id} non trovato in questo giardino.",
         )
 
-    occupata = any(
-        c.id != container_id and c.pos_x == body.posizione.x and c.pos_z == body.posizione.z
-        for c in garden.containers
-    )
-    if occupata:
-        raise HTTPException(
-            status_code=409,
-            detail=f"La cella ({body.posizione.x}, {body.posizione.z}) è già occupata da un altro contenitore.",
+    if body.posizione is not None:
+        occupata = any(
+            c.id != container_id and c.pos_x == body.posizione.x and c.pos_z == body.posizione.z
+            for c in garden.containers
         )
+        if occupata:
+            raise HTTPException(
+                status_code=409,
+                detail=f"La cella ({body.posizione.x}, {body.posizione.z}) è già occupata da un altro contenitore.",
+            )
+        contenitore.pos_x = body.posizione.x
+        contenitore.pos_z = body.posizione.z
 
-    contenitore.pos_x = body.posizione.x
-    contenitore.pos_z = body.posizione.z
+    if body.tipo is not None:
+        contenitore.tipo = body.tipo
+    if body.diametro_cm is not None:
+        contenitore.diametro_cm = body.diametro_cm
+
     db.commit()
     db.refresh(contenitore)
 

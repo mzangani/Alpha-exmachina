@@ -62,11 +62,17 @@
   button.azione.secondario:hover { background: #6d4c3b; }
   button.azione.piccolo { padding: 6px 10px; font-size: 12.5px; }
 
-  /* ── Vista classica: lista di contenitori/piante con azioni ──────── */
-  #scena.nascosto { visibility: hidden; }
+  /* ── Vista classica: sidebar con lista di contenitori/piante e azioni.
+     È una sidebar SOPRA la scena 3D (come il pannello pianta), non uno
+     scambio a schermo intero: il giardino resta visibile, non "sparisce"
+     quando la apri. ──────────────────────────────────────────────────── */
   #vista-classica {
-    position: fixed; inset: 0; top: 58px; overflow-y: auto;
+    position: fixed; left: 0; top: 58px; bottom: 0; overflow-y: auto;
+    width: min(420px, 92vw);
     padding: 16px; display: none; -webkit-overflow-scrolling: touch;
+    background: var(--crema);
+    box-shadow: 6px 0 24px rgba(0,0,0,.14);
+    z-index: 15;
   }
   #vista-classica.attiva { display: block; }
   .barra-aggiungi-contenitore {
@@ -85,6 +91,14 @@
   .posizione-contenitore label { margin: 0; font-size: 12.5px; color: #78909c; font-weight: 600; }
   .posizione-contenitore input {
     width: 52px; padding: 5px 6px; border-radius: 6px; border: 1px solid #cfd8dc; font-size: 12.5px;
+  }
+  .tipo-contenitore-riga { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .tipo-contenitore-riga label { margin: 0; font-size: 12.5px; color: #78909c; font-weight: 600; }
+  .tipo-contenitore-riga select {
+    flex: 1; min-width: 100px; padding: 5px 6px; border-radius: 6px; border: 1px solid #cfd8dc; font-size: 12.5px; background: white;
+  }
+  .tipo-contenitore-riga input {
+    width: 60px; padding: 5px 6px; border-radius: 6px; border: 1px solid #cfd8dc; font-size: 12.5px;
   }
   .scheda-pianta-lista { border-top: 1px solid #eceff1; padding: 10px 0; }
   .riga-pianta-lista { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -905,7 +919,7 @@ async function caricaGiardino(opzioni = {}) {
   stato.giardino = g;
   disegnaGiardino(g, opzioni);
   aggiornaHud(g);
-  if (vistaAttuale === 'lista') disegnaListaClassica(g);
+  if (vistaListaAperta) disegnaListaClassica(g);
   document.getElementById('benvenuto').classList.remove('aperto');
 }
 
@@ -1061,26 +1075,27 @@ document.getElementById('btn-sposta').addEventListener('click', () => {
 });
 
 /* ════════════════════════════════════════════════════════════════════
-   VISTA CLASSICA — lista di contenitori/piante con menu e azioni,
-   alternativa al click-nella-scena-3D per lavorare più comodamente.
+   VISTA CLASSICA — sidebar con lista di contenitori/piante e menu di
+   azioni, alternativa al click-nella-scena-3D per lavorare più
+   comodamente. È una sidebar SOPRA la scena 3D (esattamente come il
+   pannello della pianta): il giardino resta sempre visibile e renderizzato,
+   la lista si apre/chiude senza mai farlo "sparire".
    ════════════════════════════════════════════════════════════════════ */
-let vistaAttuale = '3d';
+let vistaListaAperta = false;
 
-function attivaVista3D() {
-  vistaAttuale = '3d';
-  document.getElementById('scena').classList.remove('nascosto');
+function apriListaClassica() {
+  vistaListaAperta = true;
+  document.getElementById('vista-classica').classList.add('attiva');
+  document.getElementById('btn-vista').textContent = '✕ Chiudi lista';
+  if (stato.giardino) disegnaListaClassica(stato.giardino);
+}
+function chiudiListaClassica() {
+  vistaListaAperta = false;
   document.getElementById('vista-classica').classList.remove('attiva');
   document.getElementById('btn-vista').textContent = '📋 Vista lista';
 }
-function attivaVistaLista() {
-  vistaAttuale = 'lista';
-  document.getElementById('scena').classList.add('nascosto');
-  document.getElementById('vista-classica').classList.add('attiva');
-  document.getElementById('btn-vista').textContent = '🧊 Vista 3D';
-  if (stato.giardino) disegnaListaClassica(stato.giardino);
-}
 document.getElementById('btn-vista').addEventListener('click', () => {
-  if (vistaAttuale === '3d') attivaVistaLista(); else attivaVista3D();
+  if (vistaListaAperta) chiudiListaClassica(); else apriListaClassica();
 });
 
 function disegnaListaClassica(g) {
@@ -1129,6 +1144,17 @@ function disegnaListaClassica(g) {
           <input type="number" class="input-pos-z" data-container-id="${c.container_id}" value="${c.posizione.z}" title="Coordinata z">
           <button class="azione piccolo secondario btn-sposta-contenitore" data-container-id="${c.container_id}">📍 Sposta</button>
         </div>
+        <div class="tipo-contenitore-riga">
+          <label>Tipo</label>
+          <select class="input-tipo-contenitore" data-container-id="${c.container_id}">
+            ${['vaso', 'fioriera', 'cassetta', 'terra'].map(t =>
+              `<option value="${t}" ${t === c.tipo ? 'selected' : ''}>${t === 'terra' ? 'Terra/prato' : t.charAt(0).toUpperCase() + t.slice(1)}</option>`
+            ).join('')}
+          </select>
+          <input type="number" class="input-diametro-contenitore" data-container-id="${c.container_id}"
+            value="${c.diametro_cm}" min="5" max="300" title="Diametro (cm)">
+          <button class="azione piccolo secondario btn-aggiorna-tipo-contenitore" data-container-id="${c.container_id}">🎨 Applica</button>
+        </div>
         ${pianteHtml}
         <div class="aggiungi-pianta-qui">
           <select class="sel-nuova-pianta" data-container-id="${c.container_id}">${opzioniCatalogo}</select>
@@ -1169,6 +1195,14 @@ document.getElementById('lista-contenitori').addEventListener('click', e => {
     const x = Number(document.querySelector(`.input-pos-x[data-container-id="${containerId}"]`).value);
     const z = Number(document.querySelector(`.input-pos-z[data-container-id="${containerId}"]`).value);
     spostaContenitore(containerId, x, z);
+    return;
+  }
+  const btnAggiornaTipo = e.target.closest('.btn-aggiorna-tipo-contenitore');
+  if (btnAggiornaTipo) {
+    const containerId = Number(btnAggiornaTipo.dataset.containerId);
+    const tipo = document.querySelector(`.input-tipo-contenitore[data-container-id="${containerId}"]`).value;
+    const diametro = Number(document.querySelector(`.input-diametro-contenitore[data-container-id="${containerId}"]`).value);
+    aggiornaTipoContenitore(containerId, tipo, diametro);
     return;
   }
   const btnManuale = e.target.closest('.btn-manuale-lista');
@@ -1235,6 +1269,23 @@ async function spostaContenitore(containerId, x, z) {
     });
     await caricaGiardino({});
     toast('📦 Contenitore spostato!', 'festa');
+  } catch (errore) {
+    toast(`❌ ${errore.message}`, 'errore', 7000);
+  }
+}
+
+// Cambia tipo e/o diametro di un contenitore esistente (dalla vista lista):
+// il colore nel rendering voxel dipende dal tipo, quindi cambia di
+// conseguenza — nessun campo "colore" separato da gestire.
+async function aggiornaTipoContenitore(containerId, tipo, diametroCm) {
+  try {
+    await api(`/api/garden/${stato.gardenId}/containers/${containerId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo, diametro_cm: diametroCm }),
+    });
+    await caricaGiardino({});
+    toast('🎨 Contenitore aggiornato!', 'festa');
   } catch (errore) {
     toast(`❌ ${errore.message}`, 'errore', 7000);
   }
