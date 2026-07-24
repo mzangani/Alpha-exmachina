@@ -96,8 +96,12 @@ def check_badges(
 
     # ── salvataggio: da sofferente/critica a buona/ottima ─────────────
     # Confrontiamo il nuovo report con quello immediatamente precedente
-    # della stessa pianta (growth_logs è ordinata per data).
-    log_precedenti = [l for l in plant.growth_logs if l.id != nuovo_log.id]
+    # della stessa pianta (growth_logs è ordinata per data), escludendo
+    # i report flagged: una baseline non plausibile non deve valere.
+    log_precedenti = [
+        l for l in plant.growth_logs
+        if l.id != nuovo_log.id and l.coerenza >= SOGLIA_COERENZA
+    ]
     if log_precedenti:
         precedente = log_precedenti[-1]
         if precedente.salute in SALUTE_CATTIVA and nuovo_log.salute in SALUTE_BUONA:

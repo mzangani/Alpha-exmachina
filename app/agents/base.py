@@ -178,6 +178,9 @@ def call_agent(
         return schema.model_validate(_estrai_json(testo))
     except (ValueError, ValidationError) as errore:
         logger.warning("JSON non valido al primo tentativo: %s — retry", errore)
+        # Python cancella il binding di `errore` all'uscita dell'except
+        # (PEP 3110): lo salviamo qui per poterlo usare più sotto.
+        messaggio_errore = str(errore)
 
     # Retry: rimandiamo al modello il SUO output e l'errore, chiedendo
     # di rispondere di nuovo SOLO con JSON valido conforme allo schema.
@@ -187,7 +190,7 @@ def call_agent(
             "role": "user",
             "content": (
                 "La tua risposta precedente non era JSON valido conforme allo "
-                f"schema richiesto. Errore: {errore}. Rispondi di nuovo SOLO con "
+                f"schema richiesto. Errore: {messaggio_errore}. Rispondi di nuovo SOLO con "
                 "l'oggetto JSON corretto, senza testo prima o dopo e senza "
                 "recinzioni markdown."
             ),

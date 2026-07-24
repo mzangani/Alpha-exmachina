@@ -298,9 +298,22 @@ async function api(percorso, opzioni = {}) {
       if (corpo.detail) dettaglio = typeof corpo.detail === 'string'
         ? corpo.detail : JSON.stringify(corpo.detail);
     } catch { /* corpo non JSON: teniamo il dettaglio generico */ }
-    throw new Error(dettaglio);
+    // Lo status resta sull'errore: chi chiama può distinguere un 404
+    // "risorsa non esiste" da un 500/502/503 transitorio.
+    const errore = new Error(dettaglio);
+    errore.status = risposta.status;
+    throw errore;
   }
   return risposta.json();
+}
+
+/** Elimina caratteri pericolosi da un testo prima di inserirlo con
+ * innerHTML: problemi/consigli e i codici contenitore arrivano
+ * dall'AI (o dalle fixture), quindi non ci fidiamo del loro contenuto. */
+function escapeHtml(testo) {
+  return String(testo).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -583,7 +596,7 @@ function apriPannello(pianta) {
 
   const riempi = (idSezione, idLista, voci) => {
     document.getElementById(idSezione).style.display = voci.length ? 'block' : 'none';
-    document.getElementById(idLista).innerHTML = voci.map(v => `<li>${v}</li>`).join('');
+    document.getElementById(idLista).innerHTML = voci.map(v => `<li>${escapeHtml(v)}</li>`).join('');
   };
   riempi('p-sez-problemi', 'p-problemi', pianta.problemi);
   riempi('p-sez-consigli', 'p-consigli', pianta.consigli);
@@ -593,7 +606,7 @@ function apriPannello(pianta) {
   const sel = document.getElementById('sel-contenitore');
   sel.innerHTML = stato.giardino.containers.map(c =>
     `<option value="${c.container_id}" ${c.container_id === pianta.container_id ? 'selected' : ''}>
-       ${c.codice} (${c.tipo}, ${c.diametro_cm} cm)</option>`).join('');
+       ${escapeHtml(c.codice)} (${escapeHtml(c.tipo)}, ${c.diametro_cm} cm)</option>`).join('');
 
   pannello.classList.add('aperto');
 }
@@ -739,11 +752,16 @@ window.__mg_schermoPianta = (plantId) => {
       await caricaGiardino({ centraCamera: true });
     }
   } catch (errore) {
-    // Giardino inesistente (DB azzerato?) → si riparte dal benvenuto
-    localStorage.removeItem('microgarden_garden_id');
-    stato.gardenId = null;
+    // Solo un vero 404 significa "questo giardino non esiste più":
+    // un errore transitorio (server che si riavvia, 500/502/503) NON deve
+    // far perdere per sempre il riferimento al giardino dell'utente.
+    const nonTrovato = errore.status === 404;
+    if (nonTrovato) {
+      localStorage.removeItem('microgarden_garden_id');
+      stato.gardenId = null;
+    }
     document.getElementById('benvenuto').classList.add('aperto');
-    if (!String(errore.message).includes('non trovato')) {
+    if (!nonTrovato) {
       toast(`❌ ${errore.message}`, 'errore', 7000);
     }
   }

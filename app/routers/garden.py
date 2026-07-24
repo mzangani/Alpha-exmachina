@@ -36,7 +36,13 @@ router = APIRouter(prefix="/api", tags=["garden"])
 
 
 def _salva_piano(db: Session, plan: GardenPlan, citta: str) -> models.Garden:
-    """Trasforma il GardenPlan dell'Advisor nello stato del gioco sul DB."""
+    """Trasforma il GardenPlan dell'Advisor nello stato del gioco sul DB.
+
+    Modifica `plan.piante_consigliate` IN PLACE per allinearlo a ciò che è
+    stato davvero salvato: così la risposta di /analyze e lo stato letto
+    con GET /garden/{id} restano coerenti anche quando l'AI ha proposto
+    riferimenti invalidi (id sbagliati, duplicati) che vengono scartati.
+    """
     garden = models.Garden(
         tipo_spazio=plan.spazio.tipo,
         luce_stimata=plan.spazio.luce_stimata,
@@ -46,9 +52,15 @@ def _salva_piano(db: Session, plan: GardenPlan, citta: str) -> models.Garden:
     db.add(garden)
     db.flush()  # assegna garden.id senza chiudere la transazione
 
-    # Contenitori: mappa codice ("vaso_1") → riga DB, per collegare le piante
+    # Contenitori: mappa codice ("vaso_1") → riga DB, per collegare le piante.
+    # Un codice duplicato nell'output AI viene scartato (si tiene il primo):
+    # altrimenti la mappa lo sovrascriverebbe silenziosamente.
     per_codice: dict[str, models.Container] = {}
+    contenitori_validi = []
     for c in plan.contenitori_rilevati:
+        if c.id in per_codice:
+            logger.warning("Advisor ha prodotto contenitore duplicato: %s — scartato", c.id)
+            continue
         cont = models.Container(
             garden_id=garden.id,
             codice=c.id,
@@ -59,10 +71,13 @@ def _salva_piano(db: Session, plan: GardenPlan, citta: str) -> models.Garden:
         )
         db.add(cont)
         per_codice[c.id] = cont
+        contenitori_validi.append(c)
     db.flush()
+    plan.contenitori_rilevati = contenitori_validi
 
     # Piante consigliate: scartiamo (con log) quelle con riferimenti errati
     # invece di far fallire tutto: l'AI può sbagliare un id su dieci.
+    piante_salvate = []
     for p in plan.piante_consigliate:
         if pianta_per_id(p.plant_id) is None:
             logger.warning("Advisor ha proposto specie inesistente: %s — scartata", p.plant_id)
@@ -83,6 +98,8 @@ def _salva_piano(db: Session, plan: GardenPlan, citta: str) -> models.Garden:
                 quando_piantare=p.quando_piantare,
             )
         )
+        piante_salvate.append(p)
+    plan.piante_consigliate = piante_salvate
 
     db.commit()
     db.refresh(garden)

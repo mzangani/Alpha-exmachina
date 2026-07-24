@@ -12,7 +12,7 @@ import base64
 import io
 
 from fastapi import HTTPException, UploadFile
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 
 MAX_BYTES = 8 * 1024 * 1024          # 8 MB
 LATO_MASSIMO = 1568                  # px sul lato lungo (soglia ottimale API)
@@ -72,13 +72,17 @@ async def prepara_immagine(foto: UploadFile) -> tuple[str, str]:
         )
 
     # ── Apertura + ridimensionamento con Pillow ───────────────────────
+    # OSError copre anche i file con magic bytes validi ma troncati/corrotti
+    # (Image.open legge solo l'header, img.load() legge i dati veri);
+    # DecompressionBombError copre le immagini enormi in pixel ma piccole
+    # in byte (es. PNG 20000×20000): nessuna delle due è UnidentifiedImageError.
     try:
         img = Image.open(io.BytesIO(dati))
         img.load()
-    except UnidentifiedImageError as e:
+    except (OSError, Image.DecompressionBombError) as e:
         raise HTTPException(
             status_code=400,
-            detail="Impossibile leggere l'immagine: il file è corrotto?",
+            detail="Impossibile leggere l'immagine: il file è corrotto, troncato o troppo grande in pixel.",
         ) from e
 
     # Converte in RGB (i JPEG non supportano trasparenza/palette)
@@ -88,7 +92,9 @@ async def prepara_immagine(foto: UploadFile) -> tuple[str, str]:
     lato_lungo = max(img.size)
     if lato_lungo > LATO_MASSIMO:
         fattore = LATO_MASSIMO / lato_lungo
-        nuova = (round(img.width * fattore), round(img.height * fattore))
+        # max(1, ...): con aspect ratio estremi (es. 20000×1) round()
+        # potrebbe azzerare un lato, e Image.resize rifiuta dimensioni 0.
+        nuova = (max(1, round(img.width * fattore)), max(1, round(img.height * fattore)))
         img = img.resize(nuova, Image.LANCZOS)
 
     # Ricomprime sempre in JPEG: formato compatto e accettato dall'API

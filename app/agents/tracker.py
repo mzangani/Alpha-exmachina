@@ -7,7 +7,7 @@ e il punteggio di coerenza anti-cheat.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.agents.base import call_agent
 from app.schemas import GrowthReport
@@ -68,7 +68,12 @@ def valuta_crescita(
     )
 
     if report_precedente is not None and data_report_precedente is not None:
-        giorni_fa = (datetime.now(data_report_precedente.tzinfo) - data_report_precedente).days
+        # SQLite restituisce datetime "naive": li trattiamo come UTC
+        # (è così che li scriviamo in models.adesso()) per confrontarli
+        # sempre con un now() altrettanto UTC-aware.
+        if data_report_precedente.tzinfo is None:
+            data_report_precedente = data_report_precedente.replace(tzinfo=timezone.utc)
+        giorni_fa = (datetime.now(timezone.utc) - data_report_precedente).days
         contesto += (
             f"\nREPORT PRECEDENTE (di {giorni_fa} giorni fa, "
             f"{data_report_precedente.date().isoformat()}):\n"
