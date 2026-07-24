@@ -58,6 +58,44 @@
   }
   button.azione:hover { background: var(--verde-scuro); }
   button.azione:disabled { background: #9e9e9e; cursor: wait; }
+  button.azione.secondario { background: var(--terra); }
+  button.azione.secondario:hover { background: #6d4c3b; }
+  button.azione.piccolo { padding: 6px 10px; font-size: 12.5px; }
+
+  /* ── Vista classica: lista di contenitori/piante con azioni ──────── */
+  #scena.nascosto { visibility: hidden; }
+  #vista-classica {
+    position: fixed; inset: 0; top: 58px; overflow-y: auto;
+    padding: 16px; display: none; -webkit-overflow-scrolling: touch;
+  }
+  #vista-classica.attiva { display: block; }
+  .barra-aggiungi-contenitore {
+    display: flex; gap: 8px; margin-bottom: 16px; max-width: 560px;
+  }
+  .barra-aggiungi-contenitore select {
+    flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #cfd8dc; background: white;
+  }
+  .scheda-contenitore {
+    background: white; border-radius: 12px; padding: 14px 16px; margin-bottom: 12px;
+    max-width: 560px; box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  }
+  .scheda-contenitore h3 { color: var(--verde-scuro); font-size: 16px; margin-bottom: 4px; }
+  .scheda-contenitore .tipo-contenitore { color: #78909c; font-weight: 400; font-size: 12.5px; }
+  .scheda-pianta-lista { border-top: 1px solid #eceff1; padding: 10px 0; }
+  .riga-pianta-lista { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .barra-stadio-mini { background: #eceff1; border-radius: 999px; height: 8px; margin: 6px 0; overflow: hidden; }
+  .barra-stadio-mini > div { height: 100%; background: linear-gradient(90deg, #8bc34a, var(--verde)); }
+  .nota-stadio-lista { color: #607d8b; font-size: 12px; }
+  .azioni-pianta-lista { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+  .azioni-pianta-lista select {
+    flex: 1; min-width: 110px; padding: 6px; border-radius: 6px; border: 1px solid #cfd8dc; font-size: 12.5px;
+  }
+  .aggiungi-pianta-qui { display: flex; gap: 6px; margin-top: 12px; }
+  .aggiungi-pianta-qui select {
+    flex: 1; padding: 7px; border-radius: 6px; border: 1px solid #cfd8dc; font-size: 12.5px; background: white;
+  }
+  .vuoto-contenitore, .vuoto-lista { color: #90a4ae; font-size: 13px; font-style: italic; }
+  .salute.mini { font-size: 11px; padding: 2px 8px; }
 
   /* ── Consociazioni (in basso a sinistra) ─────────────────────────── */
   #consociazioni {
@@ -174,10 +212,26 @@
   <div class="chip" id="punteggio" title="Punteggio biodiversità">🌿 0</div>
   <div id="badges"></div>
   <div class="spazio-flex"></div>
+  <button class="azione secondario" id="btn-vista">📋 Vista lista</button>
   <button class="azione" id="btn-nuovo">📷 Nuovo giardino</button>
 </div>
 
 <div id="consociazioni"></div>
+
+<!-- Vista classica: lista di contenitori/piante con menu e azioni,
+     alternativa al click-nella-scena-3D per lavorare più comodamente. -->
+<div id="vista-classica">
+  <div class="barra-aggiungi-contenitore">
+    <select id="sel-tipo-nuovo-contenitore">
+      <option value="vaso">Vaso</option>
+      <option value="fioriera">Fioriera</option>
+      <option value="cassetta">Cassetta</option>
+      <option value="terra">Terra / prato</option>
+    </select>
+    <button class="azione" id="btn-aggiungi-contenitore">➕ Aggiungi contenitore</button>
+  </div>
+  <div id="lista-contenitori"></div>
+</div>
 
 <!-- Pannello laterale della pianta selezionata -->
 <aside id="pannello">
@@ -201,6 +255,10 @@
   <section>
     <h3>Perché è qui</h3>
     <div class="motivo" id="p-motivo"></div>
+  </section>
+  <section id="p-sez-quando" style="display:none">
+    <h3>Quando piantare</h3>
+    <div class="motivo" id="p-quando"></div>
   </section>
   <div class="blocco-azioni">
     <button class="azione" id="btn-foto">📷 Carica foto progresso</button>
@@ -606,6 +664,8 @@ function apriPannello(pianta) {
   riempi('p-sez-problemi', 'p-problemi', pianta.problemi);
   riempi('p-sez-consigli', 'p-consigli', pianta.consigli);
   document.getElementById('p-motivo').textContent = pianta.motivo || '—';
+  document.getElementById('p-sez-quando').style.display = pianta.quando_piantare ? 'block' : 'none';
+  document.getElementById('p-quando').textContent = pianta.quando_piantare;
 
   // Select dei contenitori per lo spostamento
   const sel = document.getElementById('sel-contenitore');
@@ -647,6 +707,7 @@ async function caricaGiardino(opzioni = {}) {
   stato.giardino = g;
   disegnaGiardino(g, opzioni);
   aggiornaHud(g);
+  if (vistaAttuale === 'lista') disegnaListaClassica(g);
   document.getElementById('benvenuto').classList.remove('aperto');
 }
 
@@ -692,24 +753,35 @@ document.getElementById('form-analyze').addEventListener('submit', async e => {
   }
 });
 
-/* ── Foto di progresso (Agente 2) ────────────────────────────────── */
+/* ── Foto di progresso (Agente 2) ────────────────────────────────────
+   Parametrizzata per plant_id, non per "la pianta col pannello aperto":
+   così la usano sia il pannello 3D sia i bottoni della vista lista. ── */
 const inputFoto = document.getElementById('file-progresso');
-document.getElementById('btn-foto').addEventListener('click', () => inputFoto.click());
+
+function chiediFotoProgressoPer(plantId) {
+  stato.plantIdPerFoto = plantId;
+  inputFoto.click();
+}
+document.getElementById('btn-foto').addEventListener('click', () => {
+  if (stato.piantaSelezionata) chiediFotoProgressoPer(stato.piantaSelezionata.plant_id);
+});
 
 inputFoto.addEventListener('change', async () => {
   const file = inputFoto.files[0];
+  const plantId = stato.plantIdPerFoto;
   inputFoto.value = '';
-  if (!file || !stato.piantaSelezionata) return;
-  const plantId = stato.piantaSelezionata.plant_id;
+  if (!file || !plantId) return;
   toast('🤖 Il Growth Tracker sta osservando la tua pianta…');
   try {
     const dati = new FormData();
     dati.append('foto', file);
     const r = await api(`/api/plant/${plantId}/update`, { method: 'POST', body: dati });
     await caricaGiardino({ animaPlantId: plantId });
-    // Riapre il pannello con i dati freschi
-    const aggiornata = stato.giardino.plants.find(p => p.plant_id === plantId);
-    if (aggiornata) apriPannello(aggiornata);
+    // Se il pannello 3D era aperto proprio su questa pianta, lo riapre coi dati freschi
+    if (stato.piantaSelezionata && stato.piantaSelezionata.plant_id === plantId) {
+      const aggiornata = stato.giardino.plants.find(p => p.plant_id === plantId);
+      if (aggiornata) apriPannello(aggiornata);
+    }
 
     if (r.flagged) {
       toast('🕵️ Foto poco plausibile secondo l\'AI: stato aggiornato ma niente badge.', 'avviso', 6500);
@@ -724,21 +796,18 @@ inputFoto.addEventListener('change', async () => {
   }
 });
 
-/* ── Spostamento pianta (zero AI) ────────────────────────────────── */
-document.getElementById('btn-sposta').addEventListener('click', async () => {
-  if (!stato.piantaSelezionata) return;
-  const destinazione = Number(document.getElementById('sel-contenitore').value);
-  if (destinazione === stato.piantaSelezionata.container_id) {
+/* ── Spostamento pianta (zero AI) — anch'essa parametrizzata ─────── */
+async function spostaPianta(plantId, containerId, piantaCorrente) {
+  if (piantaCorrente && containerId === piantaCorrente) {
     toast('La pianta è già in quel contenitore.'); return;
   }
   try {
-    const r = await api(`/api/plant/${stato.piantaSelezionata.plant_id}/move`, {
+    const r = await api(`/api/plant/${plantId}/move`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ container_id: destinazione }),
+      body: JSON.stringify({ container_id: containerId }),
     });
-    await caricaGiardino({ animaPlantId: stato.piantaSelezionata.plant_id });
-    chiudiPannello();
+    await caricaGiardino({ animaPlantId: plantId });
     const nemici = r.consociazioni.filter(c => c.tipo === 'nemici');
     if (nemici.length) {
       for (const n of nemici) toast(`⚠️ ${n.messaggio}`, 'avviso', 6500);
@@ -748,7 +817,130 @@ document.getElementById('btn-sposta').addEventListener('click', async () => {
   } catch (errore) {
     toast(`❌ ${errore.message}`, 'errore', 7000);
   }
+}
+
+document.getElementById('btn-sposta').addEventListener('click', () => {
+  if (!stato.piantaSelezionata) return;
+  const destinazione = Number(document.getElementById('sel-contenitore').value);
+  spostaPianta(stato.piantaSelezionata.plant_id, destinazione, stato.piantaSelezionata.container_id);
+  chiudiPannello();
 });
+
+/* ════════════════════════════════════════════════════════════════════
+   VISTA CLASSICA — lista di contenitori/piante con menu e azioni,
+   alternativa al click-nella-scena-3D per lavorare più comodamente.
+   ════════════════════════════════════════════════════════════════════ */
+let vistaAttuale = '3d';
+
+function attivaVista3D() {
+  vistaAttuale = '3d';
+  document.getElementById('scena').classList.remove('nascosto');
+  document.getElementById('vista-classica').classList.remove('attiva');
+  document.getElementById('btn-vista').textContent = '📋 Vista lista';
+}
+function attivaVistaLista() {
+  vistaAttuale = 'lista';
+  document.getElementById('scena').classList.add('nascosto');
+  document.getElementById('vista-classica').classList.add('attiva');
+  document.getElementById('btn-vista').textContent = '🧊 Vista 3D';
+  if (stato.giardino) disegnaListaClassica(stato.giardino);
+}
+document.getElementById('btn-vista').addEventListener('click', () => {
+  if (vistaAttuale === '3d') attivaVistaLista(); else attivaVista3D();
+});
+
+function disegnaListaClassica(g) {
+  const opzioniCatalogo = Object.values(stato.catalogo)
+    .map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.nome)}</option>`).join('');
+
+  const html = g.containers.map(c => {
+    const piante = g.plants.filter(p => p.container_id === c.container_id);
+    const pianteHtml = piante.map(p => `
+      <div class="scheda-pianta-lista">
+        <div class="riga-pianta-lista">
+          <strong>${escapeHtml(p.nome)}</strong>
+          <span class="salute mini ${p.salute}">${escapeHtml(p.salute)}</span>
+        </div>
+        <div class="barra-stadio-mini"><div style="width:${Math.round(p.stadio * 100)}%"></div></div>
+        <div class="nota-stadio-lista">${Math.round(p.stadio * 100)}% di maturazione${p.flagged ? ' · ⚠️ non verificato' : ''}</div>
+        <div class="azioni-pianta-lista">
+          <button class="azione piccolo btn-foto-lista" data-plant-id="${p.plant_id}">📷 Aggiorna crescita</button>
+          <select class="sel-sposta-lista" data-plant-id="${p.plant_id}" data-container-attuale="${c.container_id}">
+            ${g.containers.map(cc => `<option value="${cc.container_id}" ${cc.container_id === c.container_id ? 'selected' : ''}>${escapeHtml(cc.codice)}</option>`).join('')}
+          </select>
+          <button class="azione piccolo secondario btn-sposta-lista" data-plant-id="${p.plant_id}">📦 Sposta</button>
+        </div>
+      </div>
+    `).join('') || '<p class="vuoto-contenitore">Nessuna pianta qui ancora.</p>';
+
+    return `
+      <div class="scheda-contenitore">
+        <h3>${escapeHtml(c.codice)} <span class="tipo-contenitore">(${escapeHtml(c.tipo)}, ${c.diametro_cm} cm)</span></h3>
+        ${pianteHtml}
+        <div class="aggiungi-pianta-qui">
+          <select class="sel-nuova-pianta" data-container-id="${c.container_id}">${opzioniCatalogo}</select>
+          <button class="azione piccolo btn-aggiungi-pianta" data-container-id="${c.container_id}">➕ Pianta qui</button>
+        </div>
+      </div>
+    `;
+  }).join('') || '<p class="vuoto-lista">Nessun contenitore ancora: aggiungine uno dal menu qui sopra.</p>';
+
+  document.getElementById('lista-contenitori').innerHTML = html;
+}
+
+// Delegazione eventi: la lista viene ricostruita a ogni refresh, quindi
+// leghiamo i listener al contenitore stabile invece che ai singoli bottoni.
+document.getElementById('lista-contenitori').addEventListener('click', e => {
+  const btnFoto = e.target.closest('.btn-foto-lista');
+  if (btnFoto) {
+    chiediFotoProgressoPer(Number(btnFoto.dataset.plantId));
+    return;
+  }
+  const btnSposta = e.target.closest('.btn-sposta-lista');
+  if (btnSposta) {
+    const plantId = Number(btnSposta.dataset.plantId);
+    const sel = document.querySelector(`.sel-sposta-lista[data-plant-id="${plantId}"]`);
+    spostaPianta(plantId, Number(sel.value), Number(sel.dataset.containerAttuale));
+    return;
+  }
+  const btnAggiungiPianta = e.target.closest('.btn-aggiungi-pianta');
+  if (btnAggiungiPianta) {
+    const containerId = Number(btnAggiungiPianta.dataset.containerId);
+    const sel = document.querySelector(`.sel-nuova-pianta[data-container-id="${containerId}"]`);
+    aggiungiPianta(containerId, sel.value);
+  }
+});
+
+async function aggiungiContenitore(tipo) {
+  try {
+    await api(`/api/garden/${stato.gardenId}/containers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo }),
+    });
+    await caricaGiardino({});
+    toast('📦 Contenitore aggiunto!', 'festa');
+  } catch (errore) {
+    toast(`❌ ${errore.message}`, 'errore', 7000);
+  }
+}
+document.getElementById('btn-aggiungi-contenitore').addEventListener('click', () => {
+  aggiungiContenitore(document.getElementById('sel-tipo-nuovo-contenitore').value);
+});
+
+async function aggiungiPianta(containerId, speciesId) {
+  try {
+    await api(`/api/garden/${stato.gardenId}/plants`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ species_id: speciesId, container_id: containerId }),
+    });
+    await caricaGiardino({});
+    toast('🌱 Pianta aggiunta!', 'festa');
+  } catch (errore) {
+    toast(`❌ ${errore.message}`, 'errore', 7000);
+  }
+}
 
 /* ════════════════════════════════════════════════════════════════════
    AVVIO

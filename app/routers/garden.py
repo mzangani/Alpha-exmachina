@@ -11,13 +11,15 @@ from datetime import datetime, timezone
 from app import models
 from app.agents.advisor import analizza_spazio
 from app.agents.tracker import valuta_crescita
-from app.catalogo import pianta_per_id
+from app.catalogo import descrivi_mesi_semina, pianta_per_id
 from app.database import get_db
 from app.game.badges import SOGLIA_COERENZA, check_badges
 from app.game.companions import analizza_consociazioni
 from app.game.scoring import punteggio_biodiversita
 from app.imaging import prepara_immagine
 from app.schemas import (
+    AddContainerRequest,
+    AddPlantRequest,
     AnalyzeResponse,
     BadgeOut,
     ContainerOut,
@@ -29,6 +31,10 @@ from app.schemas import (
     Posizione,
     UpdateResponse,
 )
+
+# Diametro di default (cm) per contenitore aggiunto a mano, per tipo:
+# l'utente della vista lista non deve stimare una misura se non vuole.
+DIAMETRO_DEFAULT_CM = {"vaso": 30, "fioriera": 60, "cassetta": 50, "terra": 100}
 
 logger = logging.getLogger("microgarden.garden")
 
@@ -189,6 +195,7 @@ def _stato_pianta(plant: models.Plant) -> PlantStateOut:
         colore_voxel=scheda.get("colore_voxel", "#3a7d2c"),
         container_id=plant.container_id,
         motivo=plant.motivo,
+        quando_piantare=plant.quando_piantare,
         n_aggiornamenti=len(plant.growth_logs),
     )
     if plant.growth_logs:
@@ -233,6 +240,112 @@ def _stato_giardino(garden: models.Garden) -> GardenStateOut:
 def garden_state(garden_id: int, db: Session = Depends(get_db)) -> GardenStateOut:
     """Tutto ciò che serve al frontend per disegnare il giardino voxel."""
     return _stato_giardino(_carica_garden(db, garden_id))
+
+
+# ---------------------------------------------------------------------------
+# Aggiunta manuale di contenitori e piante (zero AI)
+#
+# Una volta creato il giardino, l'utente deve poter continuare a lavorarci
+# senza dover rifotografare tutto: qui sceglie lui i contenitori e le
+# piante, direttamente dal catalogo — non serve alcuna percezione, quindi
+# non serve l'AI.
+# ---------------------------------------------------------------------------
+
+
+def _prossima_posizione_libera(containers: list[models.Container]) -> tuple[int, int]:
+    """Trova la prima cella libera scandendo la griglia per righe (max 6
+    colonne), così chi lavora dalla vista lista non deve pensare in
+    coordinate x/z: il posto nella scena voxel lo trova il backend."""
+    occupate = {(c.pos_x, c.pos_z) for c in containers}
+    z = 0
+    while True:
+        for x in range(6):
+            if (x, z) not in occupate:
+                return x, z
+        z += 1
+
+
+def _codice_libero(containers: list[models.Container], tipo: str) -> str:
+    """Genera un codice leggibile tipo 'vaso_3', evitando collisioni con
+    codici già presenti (anche quelli assegnati dall'Advisor)."""
+    esistenti = {c.codice for c in containers}
+    n = sum(1 for c in containers if c.tipo == tipo) + 1
+    codice = f"{tipo}_{n}"
+    while codice in esistenti:
+        n += 1
+        codice = f"{tipo}_{n}"
+    return codice
+
+
+@router.post("/garden/{garden_id}/containers", response_model=ContainerOut)
+def add_container(
+    garden_id: int,
+    body: AddContainerRequest,
+    db: Session = Depends(get_db),
+) -> ContainerOut:
+    """Aggiunge un contenitore a mano a un giardino esistente. Nessuna
+    chiamata AI: posizione e codice sono calcolati dal backend."""
+    garden = _carica_garden(db, garden_id)
+    x, z = _prossima_posizione_libera(garden.containers)
+    diametro = body.diametro_cm or DIAMETRO_DEFAULT_CM[body.tipo]
+
+    cont = models.Container(
+        garden_id=garden.id,
+        codice=_codice_libero(garden.containers, body.tipo),
+        tipo=body.tipo,
+        diametro_cm=diametro,
+        pos_x=x,
+        pos_z=z,
+    )
+    db.add(cont)
+    db.commit()
+    db.refresh(cont)
+
+    return ContainerOut(
+        container_id=cont.id,
+        codice=cont.codice,
+        tipo=cont.tipo,
+        diametro_cm=cont.diametro_cm,
+        posizione=Posizione(x=cont.pos_x, z=cont.pos_z),
+    )
+
+
+@router.post("/garden/{garden_id}/plants", response_model=PlantStateOut)
+def add_plant(
+    garden_id: int,
+    body: AddPlantRequest,
+    db: Session = Depends(get_db),
+) -> PlantStateOut:
+    """Aggiunge al giardino una pianta scelta dal catalogo, in un
+    contenitore esistente. Nessuna chiamata AI: l'utente sa già cosa vuole
+    piantare, non c'è nulla da "percepire"."""
+    garden = _carica_garden(db, garden_id)
+
+    scheda = pianta_per_id(body.species_id)
+    if scheda is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{body.species_id}' non è una specie del catalogo (GET /api/plants/catalog per l'elenco).",
+        )
+    contenitore = next((c for c in garden.containers if c.id == body.container_id), None)
+    if contenitore is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Il contenitore indicato non appartiene a questo giardino.",
+        )
+
+    plant = models.Plant(
+        garden_id=garden.id,
+        container_id=contenitore.id,
+        species_id=body.species_id,
+        motivo="Aggiunta manualmente dall'utente.",
+        quando_piantare=descrivi_mesi_semina(scheda["mesi_semina"]),
+    )
+    db.add(plant)
+    db.commit()
+    db.refresh(plant)
+
+    return _stato_pianta(plant)
 
 
 # ---------------------------------------------------------------------------

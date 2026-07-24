@@ -140,6 +140,7 @@ class PlantStateOut(BaseModel):
     giorni_al_raccolto_stimati: Optional[int] = None
     flagged: bool = False
     motivo: str = ""
+    quando_piantare: str = ""
     n_aggiornamenti: int = 0
 
 
@@ -189,3 +190,21 @@ class MoveResponse(BaseModel):
     plant_id: int
     container_id: int
     consociazioni: list[ConsociazioneOut]
+
+
+class AddContainerRequest(BaseModel):
+    """Body di POST /api/garden/{id}/containers: aggiunta manuale di un
+    contenitore (zero AI). La posizione sulla griglia è assegnata dal
+    backend, non dall'utente: chi lavora dalla vista lista non deve
+    pensare in coordinate x/z."""
+
+    tipo: Literal["vaso", "fioriera", "cassetta", "terra"]
+    diametro_cm: Optional[int] = Field(default=None, ge=5, le=300)
+
+
+class AddPlantRequest(BaseModel):
+    """Body di POST /api/garden/{id}/plants: aggiunta manuale di una
+    pianta scelta dal catalogo a un contenitore esistente (zero AI)."""
+
+    species_id: str
+    container_id: int

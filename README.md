@@ -111,6 +111,12 @@ costa meno, è testabile ed è affidabile.
 - **Un solo file HTML**: niente build step, niente framework. Il browser fa solo
   due cose: disegnare cubi (Three.js) e chiamare le API (`fetch`). Tutta
   l'intelligenza sta nel backend Python.
+- **Due viste sullo stesso stato**: il pulsante "📋 Vista lista" nell'HUD alterna
+  tra la scena voxel e una vista classica a schede (un contenitore, le sue
+  piante, i bottoni azione) — utile su schermi piccoli o quando serve
+  precisione (aggiungere una pianta, spostarla, aggiornarne la crescita) senza
+  affidarsi al click nella scena 3D. Sono la stessa pagina e lo stesso stato:
+  cambiando vista non si ricarica nulla, solo cosa viene mostrato.
 - **Contratti JSON per gli agenti**: i system prompt IMPONGONO all'AI di rispondere
   solo con JSON conforme agli schemi di `app/schemas.py`. Il testo libero è
   simpatico nelle chat, ma un'app ha bisogno di dati strutturati.
@@ -123,6 +129,8 @@ costa meno, è testabile ed è affidabile.
 | GET | `/api/garden/{garden_id}` | stato completo per il rendering (piante, badge, punteggio, consociazioni) |
 | POST | `/api/plant/{plant_id}/update` | foto progresso → Agente 2 → `GrowthLog` + eventuali nuovi badge |
 | PATCH | `/api/plant/{plant_id}/move` | sposta la pianta in un altro contenitore (ricalcolo consociazioni, zero AI) |
+| POST | `/api/garden/{garden_id}/containers` | aggiunge un contenitore a mano (posizione auto-assegnata, zero AI) |
+| POST | `/api/garden/{garden_id}/plants` | aggiunge una pianta dal catalogo a un contenitore esistente (zero AI) |
 | GET | `/api/plants/catalog` | il contenuto di `data/plants.json` |
 | POST | `/api/garden/{garden_id}/share` | *(stub futuro)* snapshot JSON pubblico del giardino |
 | GET | `/health` | `{"status": "ok", "mock_mode": true/false}` |

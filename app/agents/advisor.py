@@ -15,13 +15,8 @@ system prompt istruisce l'AI a dichiararlo esplicitamente in
 from datetime import datetime
 
 from app.agents.base import call_agent
-from app.catalogo import carica_catalogo
+from app.catalogo import MESI_IT, carica_catalogo
 from app.schemas import GardenPlan
-
-MESI_IT = [
-    "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
-    "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
-]
 
 
 def _catalogo_sintetico() -> str:
