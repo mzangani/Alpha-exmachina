@@ -49,6 +49,15 @@
     cursor: default; box-shadow: 0 2px 6px rgba(0,0,0,.08);
   }
   #hud .spazio-flex { flex: 1; }
+  .sfondo-chip { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .sfondo-chip input[type=color] {
+    -webkit-appearance: none; appearance: none;
+    width: 22px; height: 22px; border: 1px solid #d7cdbf; border-radius: 50%;
+    padding: 0; cursor: pointer; background: none; overflow: hidden;
+  }
+  .sfondo-chip input[type=color]::-webkit-color-swatch-wrapper { padding: 0; border-radius: 50%; }
+  .sfondo-chip input[type=color]::-webkit-color-swatch { border: none; border-radius: 50%; }
+  .sfondo-chip input[type=color]::-moz-color-swatch { border: none; border-radius: 50%; }
   button.azione {
     pointer-events: auto;
     background: var(--verde); color: white; border: none;
@@ -84,7 +93,9 @@
   .scheda-contenitore {
     background: white; border-radius: 12px; padding: 14px 16px; margin-bottom: 12px;
     max-width: 560px; box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    transition: box-shadow .3s ease;
   }
+  .scheda-contenitore.evidenziata { box-shadow: 0 0 0 3px var(--verde), 0 2px 8px rgba(0,0,0,.06); }
   .scheda-contenitore h3 { color: var(--verde-scuro); font-size: 16px; margin-bottom: 4px; }
   .scheda-contenitore .tipo-contenitore { color: #78909c; font-weight: 400; font-size: 12.5px; }
   .posizione-contenitore { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
@@ -243,6 +254,9 @@
   <div class="chip" id="punteggio" title="Punteggio biodiversità">🌿 0</div>
   <div id="badges"></div>
   <div class="spazio-flex"></div>
+  <label class="chip sfondo-chip" title="Cambia colore di sfondo della scena">
+    🎨 <input type="color" id="input-colore-sfondo">
+  </label>
   <button class="azione secondario" id="btn-blocca-vista" title="Blocca la rotazione della camera">🔒 Blocca vista</button>
   <button class="azione secondario" id="btn-vista">📋 Vista lista</button>
   <button class="azione" id="btn-nuovo">📷 Nuovo giardino</button>
@@ -442,7 +456,18 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xe9f2e4);
+
+// Colore di sfondo personalizzabile dall'utente (chip 🎨 nell'HUD),
+// ricordato tra una sessione e l'altra.
+const COLORE_SFONDO_DEFAULT = '#e9f2e4';
+const inputColoreSfondo = document.getElementById('input-colore-sfondo');
+const coloreSfondoSalvato = localStorage.getItem('microgarden_colore_sfondo') || COLORE_SFONDO_DEFAULT;
+scene.background = new THREE.Color(coloreSfondoSalvato);
+inputColoreSfondo.value = coloreSfondoSalvato;
+inputColoreSfondo.addEventListener('input', () => {
+  scene.background = new THREE.Color(inputColoreSfondo.value);
+  localStorage.setItem('microgarden_colore_sfondo', inputColoreSfondo.value);
+});
 
 const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
 camera.position.set(4, 5, 7);
@@ -723,34 +748,53 @@ canvas.addEventListener('pointerdown', e => {
   if (!stato.giardino) return;
   aggiornaRaycasterDaEvento(e);
 
-  // Le piante hanno priorità: sono visivamente sopra i contenitori, e chi
-  // clicca su un voxel-pianta si aspetta di prendere quella, non il vaso sotto.
-  const colpiPiante = raycaster.intersectObjects(gruppiPiante, true);
-  if (colpiPiante.length > 0) {
-    const plantId = colpiPiante[0].object.userData.plantId;
-    const pianta = stato.giardino.plants.find(p => p.plant_id === plantId);
-    if (pianta) {
-      trascinamento = {
-        tipo: 'pianta', plantId, containerAttuale: pianta.container_id,
-        iniziato: false, candidatoContainerId: null,
-      };
+  // Chi vince, pianta o contenitore, è deciso da quale superficie è
+  // REALMENTE più vicina alla camera lungo il raggio del clic — non da una
+  // priorità fissa. Un clic sulla pianta la colpisce per prima (è sopra il
+  // vaso), un clic sul bordo del vaso non coperto dalla pianta colpisce
+  // solo il contenitore: intersectObjects ordina già i risultati per
+  // distanza crescente, quindi basta unire i due insiemi e guardare il primo.
+  const bersagli = [...gruppiPiante, ...contenitoriMesh.map(v => v.mesh)];
+  const colpi = raycaster.intersectObjects(bersagli, true);
+  if (colpi.length > 0) {
+    const dati = colpi[0].object.userData;
+    if (dati.plantId != null) {
+      const pianta = stato.giardino.plants.find(p => p.plant_id === dati.plantId);
+      if (pianta) {
+        trascinamento = {
+          tipo: 'pianta', plantId: dati.plantId, containerAttuale: pianta.container_id,
+          iniziato: false, candidatoContainerId: null,
+        };
+      }
+    } else if (dati.containerId != null) {
+      iniziaTrascinamentoContenitore(dati.containerId);
     }
     return;
   }
 
-  const colpiContenitori = raycaster.intersectObjects(contenitoriMesh.map(v => v.mesh), true);
-  if (colpiContenitori.length > 0) {
-    const containerId = colpiContenitori[0].object.userData.containerId;
-    const cont = stato.giardino.containers.find(c => c.container_id === containerId);
-    if (cont) {
-      trascinamento = {
-        tipo: 'contenitore', containerId,
-        origineX: cont.posizione.x, origineZ: cont.posizione.z,
-        iniziato: false, candidatoX: null, candidatoZ: null, candidatoLibero: false,
-      };
+  // Il raycasting preciso non ha colpito nulla: come fallback agganciamo il
+  // contenitore più vicino sul piano di terra — stessa tolleranza già
+  // usata per decidere dove RILASCIARE una pianta trascinata. Recupera i
+  // clic un po' larghi su un contenitore vuoto o poco ingombrante.
+  if (raycaster.ray.intersectPlane(pianoTerra, puntoTerra)) {
+    let candidato = null, distanzaMin = CELLA * 0.55;
+    for (const voce of contenitoriMesh) {
+      const d = Math.hypot(puntoTerra.x - voce.mesh.position.x, puntoTerra.z - voce.mesh.position.z);
+      if (d < distanzaMin) { distanzaMin = d; candidato = voce.containerId; }
     }
+    if (candidato != null) iniziaTrascinamentoContenitore(candidato);
   }
 });
+
+function iniziaTrascinamentoContenitore(containerId) {
+  const cont = stato.giardino.containers.find(c => c.container_id === containerId);
+  if (!cont) return;
+  trascinamento = {
+    tipo: 'contenitore', containerId,
+    origineX: cont.posizione.x, origineZ: cont.posizione.z,
+    iniziato: false, candidatoX: null, candidatoZ: null, candidatoLibero: false,
+  };
+}
 
 canvas.addEventListener('pointermove', e => {
   if (!trascinamento) return;
@@ -809,10 +853,17 @@ canvas.addEventListener('pointerup', e => {
       return;
     }
     // Nessun movimento oltre soglia: è stato un click, non un trascinamento.
-    // Solo le piante aprono il pannello; cliccare un contenitore vuoto non fa nulla.
-    if (t.tipo === 'pianta' && performance.now() - ultimoPointerDown.t <= 400) {
-      const pianta = stato.giardino.plants.find(p => p.plant_id === t.plantId);
-      if (pianta) apriPannello(pianta);
+    if (performance.now() - ultimoPointerDown.t <= 400) {
+      if (t.tipo === 'pianta') {
+        const pianta = stato.giardino.plants.find(p => p.plant_id === t.plantId);
+        if (pianta) apriPannello(pianta);
+      } else {
+        // Cliccare un contenitore (vuoto o no) apre la vista lista sulla sua
+        // scheda: è lì che si aggiungono piante, si cambia tipo/diametro e si
+        // può correggere la posizione a mano — senza, un vaso di terra vuoto
+        // non dava alcun modo ovvio per capire come piantarci qualcosa.
+        apriListaEEvidenziaContenitore(t.containerId);
+      }
     }
     return;
   }
@@ -1098,6 +1149,21 @@ document.getElementById('btn-vista').addEventListener('click', () => {
   if (vistaListaAperta) chiudiListaClassica(); else apriListaClassica();
 });
 
+// Cliccare un contenitore nella scena 3D apre la sidebar e ne evidenzia la
+// scheda: è il modo più diretto per arrivarci ad "aggiungi pianta", specie
+// per un contenitore "terra/prato" ancora vuoto che in 3D è solo una
+// zolla piatta, senza alcuna affordance evidente su cui cliccare.
+function apriListaEEvidenziaContenitore(containerId) {
+  apriListaClassica();
+  requestAnimationFrame(() => {
+    const scheda = document.querySelector(`.scheda-contenitore[data-container-id="${containerId}"]`);
+    if (!scheda) return;
+    scheda.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    scheda.classList.add('evidenziata');
+    setTimeout(() => scheda.classList.remove('evidenziata'), 1800);
+  });
+}
+
 function disegnaListaClassica(g) {
   const opzioniCatalogo = Object.values(stato.catalogo)
     .map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.nome)}</option>`).join('');
@@ -1136,7 +1202,7 @@ function disegnaListaClassica(g) {
     `).join('') || '<p class="vuoto-contenitore">Nessuna pianta qui ancora.</p>';
 
     return `
-      <div class="scheda-contenitore">
+      <div class="scheda-contenitore" data-container-id="${c.container_id}">
         <h3>${escapeHtml(c.codice)} <span class="tipo-contenitore">(${escapeHtml(c.tipo)}, ${c.diametro_cm} cm)</span></h3>
         <div class="posizione-contenitore">
           <label>Posizione</label>
@@ -1311,6 +1377,26 @@ window.__mg_schermoContenitore = (containerId) => {
   return { x: (v.x + 1) / 2 * window.innerWidth, y: (1 - v.y) / 2 * window.innerHeight };
 };
 window.__mg_statoCamera = () => ({ enabled: controls.enabled, vistaBloccata });
+window.__mg_coloreSfondoAttuale = () => '#' + scene.background.getHexString();
+window.__mg_raycastAt = (px, py) => {
+  puntatore.x = (px / window.innerWidth) * 2 - 1;
+  puntatore.y = -(py / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(puntatore, camera);
+  const colpiPiante = raycaster.intersectObjects(gruppiPiante, true);
+  const colpiContenitori = raycaster.intersectObjects(contenitoriMesh.map(v => v.mesh), true);
+  const combinati = raycaster.intersectObjects([...gruppiPiante, ...contenitoriMesh.map(v => v.mesh)], true);
+  return {
+    nPiante: colpiPiante.length,
+    piantaId: colpiPiante.length ? colpiPiante[0].object.userData.plantId : null,
+    distPianta: colpiPiante.length ? colpiPiante[0].distance : null,
+    nContenitori: colpiContenitori.length,
+    contenitoreId: colpiContenitori.length ? colpiContenitori[0].object.userData.containerId : null,
+    distContenitore: colpiContenitori.length ? colpiContenitori[0].distance : null,
+    vincitore: combinati.length
+      ? (combinati[0].object.userData.plantId != null ? 'pianta' : 'contenitore')
+      : 'nessuno',
+  };
+};
 
 (async function avvia() {
   try {

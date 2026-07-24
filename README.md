@@ -123,13 +123,24 @@ costa meno, è testabile ed è affidabile.
   prendere una pianta col mouse/dito e trascinarla su un altro contenitore per
   spostarla, oppure prendere un intero contenitore e trascinarlo su un'altra
   cella della griglia (mostra un'anteprima verde se la cella è libera, rossa
-  se occupata). La camera si sospende da sola durante il trascinamento, per
-  non interferire. Il pulsante "🔒 Blocca vista" congela la rotazione/zoom
-  della camera in modo persistente, utile quando si vuole solo cliccare tra
-  più piante senza che la vista si sposti per sbaglio. Dalla vista lista si
-  può anche spostare un contenitore inserendo le coordinate x/z a mano, oppure
-  cambiarne tipo e diametro (il colore nel rendering voxel dipende dal tipo,
-  quindi cambia di conseguenza — non c'è un campo "colore" separato).
+  se occupata). Quando una pianta e il suo contenitore si sovrappongono a
+  schermo, a decidere chi viene "preso" è quale superficie è realmente più
+  vicina alla camera lungo il raggio del clic (non una priorità fissa): un
+  clic sulla pianta prende la pianta, un clic sul bordo del vaso non coperto
+  prende il vaso, anche se la pianta è cresciuta parecchio. La camera si
+  sospende da sola durante il trascinamento, per non interferire. Il
+  pulsante "🔒 Blocca vista" congela la rotazione/zoom della camera in modo
+  persistente, utile quando si vuole solo cliccare tra più piante senza che
+  la vista si sposti per sbaglio. Cliccare (senza trascinare) un contenitore
+  apre la vista lista evidenziando la sua scheda: da lì si aggiungono
+  piante, si spostano coordinate x/z a mano, e si cambia tipo/diametro (il
+  colore nel rendering voxel dipende dal tipo, quindi cambia di conseguenza
+  — non c'è un campo "colore" separato). È il modo più diretto per piantare
+  qualcosa in un contenitore "terra/prato" ancora vuoto, che in 3D è solo
+  una zolla piatta senza alcuna affordance ovvia su cui cliccare.
+- **Colore di sfondo personalizzabile**: la chip 🎨 nell'HUD apre il color
+  picker nativo del browser per cambiare lo sfondo della scena 3D; la scelta
+  è ricordata in `localStorage` e resta impostata tra una sessione e l'altra.
 - **Contratti JSON per gli agenti**: i system prompt IMPONGONO all'AI di rispondere
   solo con JSON conforme agli schemi di `app/schemas.py`. Il testo libero è
   simpatico nelle chat, ma un'app ha bisogno di dati strutturati.
