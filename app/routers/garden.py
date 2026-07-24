@@ -25,6 +25,7 @@ from app.schemas import (
     ContainerOut,
     GardenPlan,
     GardenStateOut,
+    MoveContainerRequest,
     MoveRequest,
     MoveResponse,
     PlantStateOut,
@@ -346,6 +347,48 @@ def add_plant(
     db.refresh(plant)
 
     return _stato_pianta(plant)
+
+
+@router.patch("/garden/{garden_id}/containers/{container_id}", response_model=ContainerOut)
+def move_container(
+    garden_id: int,
+    container_id: int,
+    body: MoveContainerRequest,
+    db: Session = Depends(get_db),
+) -> ContainerOut:
+    """Sposta un contenitore in un'altra cella della griglia (trascinamento
+    nella scena 3D, o coordinate inserite a mano dalla vista lista). Nessuna
+    chiamata AI: è solo aggiornamento di stato."""
+    garden = _carica_garden(db, garden_id)
+    contenitore = next((c for c in garden.containers if c.id == container_id), None)
+    if contenitore is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Contenitore {container_id} non trovato in questo giardino.",
+        )
+
+    occupata = any(
+        c.id != container_id and c.pos_x == body.posizione.x and c.pos_z == body.posizione.z
+        for c in garden.containers
+    )
+    if occupata:
+        raise HTTPException(
+            status_code=409,
+            detail=f"La cella ({body.posizione.x}, {body.posizione.z}) è già occupata da un altro contenitore.",
+        )
+
+    contenitore.pos_x = body.posizione.x
+    contenitore.pos_z = body.posizione.z
+    db.commit()
+    db.refresh(contenitore)
+
+    return ContainerOut(
+        container_id=contenitore.id,
+        codice=contenitore.codice,
+        tipo=contenitore.tipo,
+        diametro_cm=contenitore.diametro_cm,
+        posizione=Posizione(x=contenitore.pos_x, z=contenitore.pos_z),
+    )
 
 
 # ---------------------------------------------------------------------------

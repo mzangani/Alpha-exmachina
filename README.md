@@ -119,10 +119,13 @@ costa meno, è testabile ed è affidabile.
   cambiando vista non si ricarica nulla, solo cosa viene mostrato.
 - **Trascina per spostare, blocca per non ruotare**: nella scena 3D si può
   prendere una pianta col mouse/dito e trascinarla su un altro contenitore per
-  spostarla (la camera si sospende da sola durante il trascinamento, per non
-  interferire). Il pulsante "🔒 Blocca vista" congela la rotazione/zoom della
-  camera in modo persistente, utile quando si vuole solo cliccare tra più
-  piante senza che la vista si sposti per sbaglio.
+  spostarla, oppure prendere un intero contenitore e trascinarlo su un'altra
+  cella della griglia (mostra un'anteprima verde se la cella è libera, rossa
+  se occupata). La camera si sospende da sola durante il trascinamento, per
+  non interferire. Il pulsante "🔒 Blocca vista" congela la rotazione/zoom
+  della camera in modo persistente, utile quando si vuole solo cliccare tra
+  più piante senza che la vista si sposti per sbaglio. Dalla vista lista si
+  può anche spostare un contenitore inserendo le coordinate x/z a mano.
 - **Contratti JSON per gli agenti**: i system prompt IMPONGONO all'AI di rispondere
   solo con JSON conforme agli schemi di `app/schemas.py`. Il testo libero è
   simpatico nelle chat, ma un'app ha bisogno di dati strutturati.
@@ -137,6 +140,7 @@ costa meno, è testabile ed è affidabile.
 | PATCH | `/api/plant/{plant_id}/move` | sposta la pianta in un altro contenitore (ricalcolo consociazioni, zero AI) |
 | POST | `/api/garden/{garden_id}/containers` | aggiunge un contenitore a mano (posizione auto-assegnata, zero AI) |
 | POST | `/api/garden/{garden_id}/plants` | aggiunge una pianta dal catalogo a un contenitore esistente (zero AI) |
+| PATCH | `/api/garden/{garden_id}/containers/{container_id}` | sposta il contenitore in un'altra cella della griglia (409 se occupata, zero AI) |
 | GET | `/api/plants/catalog` | il contenuto di `data/plants.json` |
 | POST | `/api/garden/{garden_id}/share` | *(stub futuro)* snapshot JSON pubblico del giardino |
 | GET | `/health` | `{"status": "ok", "mock_mode": true/false}` |

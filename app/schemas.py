@@ -208,3 +208,11 @@ class AddPlantRequest(BaseModel):
 
     species_id: str
     container_id: int
+
+
+class MoveContainerRequest(BaseModel):
+    """Body di PATCH /api/garden/{id}/containers/{container_id}: nuova
+    posizione sulla griglia (trascinamento nella scena 3D, o coordinate
+    inserite a mano dalla vista lista)."""
+
+    posizione: Posizione

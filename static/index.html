@@ -81,6 +81,11 @@
   }
   .scheda-contenitore h3 { color: var(--verde-scuro); font-size: 16px; margin-bottom: 4px; }
   .scheda-contenitore .tipo-contenitore { color: #78909c; font-weight: 400; font-size: 12.5px; }
+  .posizione-contenitore { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .posizione-contenitore label { margin: 0; font-size: 12.5px; color: #78909c; font-weight: 600; }
+  .posizione-contenitore input {
+    width: 52px; padding: 5px 6px; border-radius: 6px; border: 1px solid #cfd8dc; font-size: 12.5px;
+  }
   .scheda-pianta-lista { border-top: 1px solid #eceff1; padding: 10px 0; }
   .riga-pianta-lista { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .barra-stadio-mini { background: #eceff1; border-radius: 999px; height: 8px; margin: 6px 0; overflow: hidden; }
@@ -485,6 +490,9 @@ function meshContenitore(cont) {
   g.position.set(cont.posizione.x * CELLA, 0, cont.posizione.z * CELLA);
   g.userData.altezzaSuolo = cont.tipo === 'terra' ? 0.09 : 0.38;
   g.userData.corpoMesh = corpo;  // riferimento per tingere il contenitore durante il trascinamento
+  // Il raycasting colpisce le singole mesh figlie (corpo/suolo), non il
+  // gruppo: serve marcarle tutte per riconoscere il contenitore trascinato.
+  g.traverse(o => { o.userData.containerId = cont.container_id; });
   return g;
 }
 
@@ -618,13 +626,14 @@ function disegnaGiardino(g, opzioni = {}) {
   }
 }
 
-/* ── Interazione: click apre il pannello, trascinamento sposta la pianta ──
-   La camera ruota trascinando lo sfondo (OrbitControls, invariato). Un
-   trascinamento che INIZIA su una pianta la sposta invece di ruotare la
-   camera: durante il trascinamento l'orbit control viene sospeso in
-   automatico, indipendentemente dal pulsante "Blocca vista" — quello
-   serve per bloccarla in modo persistente (utile quando si vuole solo
-   cliccare più piante di fila senza che la vista si sposti per sbaglio).
+/* ── Interazione: click apre il pannello, trascinamento sposta piante o
+   contenitori. La camera ruota trascinando lo sfondo (OrbitControls,
+   invariato). Un trascinamento che INIZIA su una pianta o un contenitore
+   lo sposta invece di ruotare la camera: durante il trascinamento
+   l'orbit control viene sospeso in automatico, indipendentemente dal
+   pulsante "Blocca vista" — quello serve per bloccarla in modo
+   persistente (utile quando si vuole solo cliccare più volte di fila
+   senza che la vista si sposti per sbaglio).
    ──────────────────────────────────────────────────────────────────── */
 const raycaster = new THREE.Raycaster();
 const puntatore = new THREE.Vector2();
@@ -632,9 +641,12 @@ const pianoTerra = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const puntoTerra = new THREE.Vector3();
 
 let ultimoPointerDown = { x: 0, y: 0, t: 0 };
-let trascinamento = null;   // { plantId, containerAttuale, iniziato, candidatoContainerId }
+// tipo: 'pianta' → { tipo, plantId, containerAttuale, candidatoContainerId }
+// tipo: 'contenitore' → { tipo, containerId, origineX, origineZ, candidatoX, candidatoZ, candidatoLibero }
+let trascinamento = null;
 let vistaBloccata = false;
 let contenitoreEvidenziatoId = null;
+let ghostCella = null;   // anteprima della cella di destinazione quando si trascina un contenitore
 
 function aggiornaRaycasterDaEvento(e) {
   puntatore.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -658,17 +670,45 @@ function rimuoviEvidenziazione() {
   contenitoreEvidenziatoId = null;
 }
 
+function creaGhostCella() {
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(CELLA * 0.85, 0.05, CELLA * 0.85),
+    new THREE.MeshBasicMaterial({ color: 0x2e7d32, transparent: true, opacity: 0.45 })
+  );
+  m.position.y = 0.03;
+  scene.add(m);
+  return m;
+}
+
 canvas.addEventListener('pointerdown', e => {
   ultimoPointerDown = { x: e.clientX, y: e.clientY, t: performance.now() };
+  if (!stato.giardino) return;
   aggiornaRaycasterDaEvento(e);
-  const colpi = raycaster.intersectObjects(gruppiPiante, true);
-  if (colpi.length > 0 && stato.giardino) {
-    const plantId = colpi[0].object.userData.plantId;
+
+  // Le piante hanno priorità: sono visivamente sopra i contenitori, e chi
+  // clicca su un voxel-pianta si aspetta di prendere quella, non il vaso sotto.
+  const colpiPiante = raycaster.intersectObjects(gruppiPiante, true);
+  if (colpiPiante.length > 0) {
+    const plantId = colpiPiante[0].object.userData.plantId;
     const pianta = stato.giardino.plants.find(p => p.plant_id === plantId);
     if (pianta) {
       trascinamento = {
-        plantId, containerAttuale: pianta.container_id,
+        tipo: 'pianta', plantId, containerAttuale: pianta.container_id,
         iniziato: false, candidatoContainerId: null,
+      };
+    }
+    return;
+  }
+
+  const colpiContenitori = raycaster.intersectObjects(contenitoriMesh.map(v => v.mesh), true);
+  if (colpiContenitori.length > 0) {
+    const containerId = colpiContenitori[0].object.userData.containerId;
+    const cont = stato.giardino.containers.find(c => c.container_id === containerId);
+    if (cont) {
+      trascinamento = {
+        tipo: 'contenitore', containerId,
+        origineX: cont.posizione.x, origineZ: cont.posizione.z,
+        iniziato: false, candidatoX: null, candidatoZ: null, candidatoLibero: false,
       };
     }
   }
@@ -681,9 +721,12 @@ canvas.addEventListener('pointermove', e => {
     if (Math.hypot(dx, dy) <= 6) return;  // sotto soglia: potrebbe essere solo un click
     trascinamento.iniziato = true;
     controls.enabled = false;  // sospende la camera per la durata del trascinamento
+    if (trascinamento.tipo === 'contenitore') ghostCella = creaGhostCella();
   }
   aggiornaRaycasterDaEvento(e);
-  if (raycaster.ray.intersectPlane(pianoTerra, puntoTerra)) {
+  if (!raycaster.ray.intersectPlane(pianoTerra, puntoTerra)) return;
+
+  if (trascinamento.tipo === 'pianta') {
     let candidato = null, distanzaMin = CELLA * 0.65;
     for (const voce of contenitoriMesh) {
       const d = Math.hypot(puntoTerra.x - voce.mesh.position.x, puntoTerra.z - voce.mesh.position.z);
@@ -691,6 +734,19 @@ canvas.addEventListener('pointermove', e => {
     }
     trascinamento.candidatoContainerId = candidato;
     if (candidato != null) evidenziaContenitore(candidato); else rimuoviEvidenziazione();
+  } else {
+    // Contenitore: si aggancia sempre alla cella più vicina (arrotondamento
+    // alle coordinate intere), colorata di verde se libera o rossa se occupata.
+    const cx = Math.round(puntoTerra.x / CELLA), cz = Math.round(puntoTerra.z / CELLA);
+    trascinamento.candidatoX = cx;
+    trascinamento.candidatoZ = cz;
+    const occupata = stato.giardino.containers.some(c =>
+      c.container_id !== trascinamento.containerId && c.posizione.x === cx && c.posizione.z === cz);
+    trascinamento.candidatoLibero = !occupata;
+    if (ghostCella) {
+      ghostCella.position.set(cx * CELLA, 0.03, cz * CELLA);
+      ghostCella.material.color.setHex(occupata ? 0xc62828 : 0x2e7d32);
+    }
   }
 });
 
@@ -699,25 +755,31 @@ canvas.addEventListener('pointerup', e => {
     const t = trascinamento;
     trascinamento = null;
     rimuoviEvidenziazione();
+    if (ghostCella) { scene.remove(ghostCella); ghostCella = null; }
 
     if (t.iniziato) {
       // Era un vero trascinamento: ripristina la camera secondo il blocco
-      // scelto dall'utente, e sposta la pianta se il rilascio è avvenuto
-      // su un contenitore diverso da quello di partenza.
+      // scelto dall'utente, poi applica lo spostamento se valido.
       controls.enabled = !vistaBloccata;
-      if (t.candidatoContainerId != null && t.candidatoContainerId !== t.containerAttuale) {
-        spostaPianta(t.plantId, t.candidatoContainerId, t.containerAttuale);
+      if (t.tipo === 'pianta') {
+        if (t.candidatoContainerId != null && t.candidatoContainerId !== t.containerAttuale) {
+          spostaPianta(t.plantId, t.candidatoContainerId, t.containerAttuale);
+        }
+      } else if (t.candidatoLibero && (t.candidatoX !== t.origineX || t.candidatoZ !== t.origineZ)) {
+        spostaContenitore(t.containerId, t.candidatoX, t.candidatoZ);
       }
       return;
     }
-    // Nessun movimento oltre soglia: è stato un click sulla pianta
-    if (performance.now() - ultimoPointerDown.t > 400) return;
-    const pianta = stato.giardino.plants.find(p => p.plant_id === t.plantId);
-    if (pianta) apriPannello(pianta);
+    // Nessun movimento oltre soglia: è stato un click, non un trascinamento.
+    // Solo le piante aprono il pannello; cliccare un contenitore vuoto non fa nulla.
+    if (t.tipo === 'pianta' && performance.now() - ultimoPointerDown.t <= 400) {
+      const pianta = stato.giardino.plants.find(p => p.plant_id === t.plantId);
+      if (pianta) apriPannello(pianta);
+    }
     return;
   }
 
-  // Click fuori da qualunque pianta: se non è stato un drag della camera, chiude il pannello
+  // Click fuori da qualunque oggetto: se non è stato un drag della camera, chiude il pannello
   const dx = e.clientX - ultimoPointerDown.x, dy = e.clientY - ultimoPointerDown.y;
   if (Math.hypot(dx, dy) > 6 || performance.now() - ultimoPointerDown.t > 400) return;
   chiudiPannello();
@@ -967,6 +1029,12 @@ function disegnaListaClassica(g) {
     return `
       <div class="scheda-contenitore">
         <h3>${escapeHtml(c.codice)} <span class="tipo-contenitore">(${escapeHtml(c.tipo)}, ${c.diametro_cm} cm)</span></h3>
+        <div class="posizione-contenitore">
+          <label>Posizione</label>
+          <input type="number" class="input-pos-x" data-container-id="${c.container_id}" value="${c.posizione.x}" title="Coordinata x">
+          <input type="number" class="input-pos-z" data-container-id="${c.container_id}" value="${c.posizione.z}" title="Coordinata z">
+          <button class="azione piccolo secondario btn-sposta-contenitore" data-container-id="${c.container_id}">📍 Sposta</button>
+        </div>
         ${pianteHtml}
         <div class="aggiungi-pianta-qui">
           <select class="sel-nuova-pianta" data-container-id="${c.container_id}">${opzioniCatalogo}</select>
@@ -999,6 +1067,14 @@ document.getElementById('lista-contenitori').addEventListener('click', e => {
     const containerId = Number(btnAggiungiPianta.dataset.containerId);
     const sel = document.querySelector(`.sel-nuova-pianta[data-container-id="${containerId}"]`);
     aggiungiPianta(containerId, sel.value);
+    return;
+  }
+  const btnSpostaContenitore = e.target.closest('.btn-sposta-contenitore');
+  if (btnSpostaContenitore) {
+    const containerId = Number(btnSpostaContenitore.dataset.containerId);
+    const x = Number(document.querySelector(`.input-pos-x[data-container-id="${containerId}"]`).value);
+    const z = Number(document.querySelector(`.input-pos-z[data-container-id="${containerId}"]`).value);
+    spostaContenitore(containerId, x, z);
   }
 });
 
@@ -1028,6 +1104,23 @@ async function aggiungiPianta(containerId, speciesId) {
     });
     await caricaGiardino({});
     toast('🌱 Pianta aggiunta!', 'festa');
+  } catch (errore) {
+    toast(`❌ ${errore.message}`, 'errore', 7000);
+  }
+}
+
+// Condivisa dal trascinamento nella scena 3D e dagli input di coordinate
+// nella vista lista: sposta il CONTENITORE stesso su un'altra cella della
+// griglia (non una pianta al suo interno).
+async function spostaContenitore(containerId, x, z) {
+  try {
+    await api(`/api/garden/${stato.gardenId}/containers/${containerId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ posizione: { x, z } }),
+    });
+    await caricaGiardino({});
+    toast('📦 Contenitore spostato!', 'festa');
   } catch (errore) {
     toast(`❌ ${errore.message}`, 'errore', 7000);
   }
